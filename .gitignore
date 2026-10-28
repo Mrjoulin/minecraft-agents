@@ -1,0 +1,21 @@
+# secrets
+.env
+
+# dependencies
+node_modules/
+
+# Minecraft server (Mojang's server.jar is not redistributable) and world backup
+server/
+world-backup/
+
+# run logs and recordings (large; regenerate locally)
+logs/
+recordings/*
+!recordings/assets/
+recordings/assets/*.png
+*.mp4
+*.mov
+*.webm
+
+# OS
+.DS_Store

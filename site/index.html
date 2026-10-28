@@ -1,0 +1,240 @@
+<title>Minecraft Commander MAS</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single reading column (~72ch) with wide breakout blocks for the video, diagram and stage grid. */
+:root {
+  --bg: #f4f6f2; --surface: #ffffff; --fg: #18201c; --muted: #5b665f; --line: #d8ded6;
+  --accent: #17895a; --accent-soft: #e2f2ea;
+  --cmd: #b97a06; --bram: #1f6fb2; --lina: #c2387a; --odo: #2f8a2f;
+  --ok: #17895a; --no: #c0392b;
+  --display: "Pixelify Sans", "IBM Plex Mono", ui-monospace, monospace;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111613; --surface: #171e1a; --fg: #e5ebe6; --muted: #98a59c; --line: #2a342e;
+  --accent: #4fd197; --accent-soft: #173126;
+  --cmd: #f2b84b; --bram: #6cbcff; --lina: #ff83bd; --odo: #86dd86; --ok: #4fd197; --no: #ff7a6b;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111613; --surface: #171e1a; --fg: #e5ebe6; --muted: #98a59c; --line: #2a342e;
+  --accent: #4fd197; --accent-soft: #173126;
+  --cmd: #f2b84b; --bram: #6cbcff; --lina: #ff83bd; --odo: #86dd86; --ok: #4fd197; --no: #ff7a6b;
+  color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 80px }
+main { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px }
+.read { max-width: 72ch }
+h1, h2 { font-family: var(--display); font-weight: 700; letter-spacing: .2px; text-wrap: balance; margin: 0 }
+h1 { font-size: clamp(34px, 6vw, 56px); line-height: 1.05 }
+h2 { font-size: clamp(24px, 3.4vw, 32px); line-height: 1.15 }
+h3 { font-size: 17px; margin: 0; font-weight: 600 }
+p { margin: 0 }
+.eyebrow { font: 500 12px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted) }
+section { display: flex; flex-direction: column; gap: 18px; min-width: 0 }
+.lede { font-size: 19px; color: var(--muted); max-width: 64ch }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font: 14px var(--mono); color: var(--muted) }
+.meta b { color: var(--fg); font-weight: 500 }
+.who { font-weight: 600 } .c { color: var(--cmd) } .b { color: var(--bram) } .l { color: var(--lina) } .o { color: var(--odo) }
+code, .mono { font-family: var(--mono); font-size: .92em }
+
+.video { background: #000; border-radius: 6px; overflow: hidden; border: 1px solid var(--line) }
+.video video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; max-width: 100% }
+.caption { font-size: 14px; color: var(--muted) }
+.moments { display: grid; grid-template-columns: 76px 1fr; gap: 6px 14px; font-size: 15px; max-width: 80ch }
+.moments .t { font: 500 14px var(--mono); color: var(--accent); font-variant-numeric: tabular-nums }
+
+.scroll { overflow-x: auto; min-width: 0 }
+table { border-collapse: collapse; width: 100%; font-size: 15px }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line) }
+th { font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 1px; color: var(--muted) }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--mono) }
+.yes { color: var(--ok); font-weight: 600 } .noo { color: var(--no); font-weight: 600 }
+
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px }
+.components { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px }
+.comp { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-top: 3px solid var(--accent); background: var(--surface) }
+.comp p { font-size: 15px; color: var(--muted) }
+.comp .tag { font: 12px var(--mono); color: var(--accent) }
+
+.stages { display: grid; gap: 0; border-top: 1px solid var(--line) }
+.stage { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 28px; padding: 22px 0; border-bottom: 1px solid var(--line) }
+.stage .when { font: 500 14px var(--mono); color: var(--muted); display: flex; flex-direction: column; gap: 4px }
+.stage .when b { font-family: var(--display); font-size: 26px; color: var(--accent); font-weight: 700 }
+.stage ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px }
+.stage .bits { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 10px 24px; font-size: 15px }
+.stage .k { font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 1px; color: var(--muted); display: block; margin-bottom: 2px }
+.stage .body { display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+.callout { background: var(--accent-soft); padding: 14px 18px; border-radius: 6px; font-size: 15px; max-width: 80ch }
+a { color: var(--accent) }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+ul.plain { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; max-width: 80ch }
+
+@media (max-width: 640px) {
+  .stage { grid-template-columns: 1fr }
+  .stage .when { flex-direction: row; align-items: baseline; gap: 12px }
+  .moments { grid-template-columns: 64px 1fr }
+}
+</style>
+
+<main>
+  <header style="display:flex;flex-direction:column;gap:16px">
+    <span class="eyebrow">University MAS project · plan &amp; prototype · 27 Oct 2026</span>
+    <h1>Commander &amp; hidden-persona agents in Minecraft</h1>
+    <p class="lede">A commander agent gets an ultimate goal and leads 3–5 worker agents. Each worker has a hidden personality trait and a secret motive. The commander does not know them, can only give orders in person, and has to work them out by watching.</p>
+    <div class="meta"><span><b>10 weeks</b> · 5 stages × 2 weeks</span><span><b>Stack</b> Minecraft Java 1.21.4 · Mineflayer · Node.js</span><span><b>LLM</b> DeepSeek v4.1 flash (OpenAI-compatible)</span></div>
+  </header>
+
+  <section>
+    <span class="eyebrow">Demo</span>
+    <h2>What it looks like: a real session, unedited</h2>
+    <div class="video"><video controls preload="metadata" poster="poster.jpg" src="demo.mp4"></video></div>
+    <p class="caption">Recorded from the spectator dashboard: a 3D view that follows the commander on the left; on the right, everything said (with who could hear it), private reasoning, and the commander's live guesses. Shown at 2× speed. The bots, chopping, chest deliveries and emerald payments all happen on a real local server.</p>
+    <p class="caption">Key moments, by the session clock in the top-right of the video:</p>
+    <div class="moments">
+      <span class="t">0:18</span><span><span class="who l">Lina</span> greets a pig before anyone has given her an order.</span>
+      <span class="t">0:19</span><span>The <span class="who c">Commander</span> walks to each worker in turn and sends them north, east and south. Workers standing nearby overhear the orders.</span>
+      <span class="t">0:36</span><span><span class="who o">Odo</span> thinks privately: "deliver only part to the chest, keeping some hidden for myself."</span>
+      <span class="t">0:43</span><span><span class="who b">Bram</span> asks: "Any spare armor?" He keeps asking all session.</span>
+      <span class="t">1:44</span><span>First belief update: the commander rates Lina "soft spot for animals" at 0.8 and suspects Bram of wanting armor.</span>
+      <span class="t">3:00</span><span>Sunset. The commander promises Bram an emerald for 3 more logs. Bram: "Sun's setting. I better get back to camp before it gets too dark."</span>
+      <span class="t">4:25</span><span>The commander pays Odo an emerald for "reliable" work. The hoarder fooled it.</span>
+      <span class="t">4:42</span><span>Ordered north at night, Bram refuses: "It's too dark to see the branches. I'll keep the fire safe till dawn."</span>
+      <span class="t">6:26</span><span>Final guesses, then the ground truth is revealed.</span>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Prototype result</span>
+    <h2>The commander found all three hidden traits</h2>
+    <p class="read">Scored against the Game Master's ground truth, which the commander never saw. This is one 6.5-minute session, a demonstration and not yet a statistic; Stage 5 runs at least 20.</p>
+    <div class="scroll"><table>
+      <tr><th>Agent</th><th>Hidden trait / secret motive</th><th>Commander's final guess (confidence)</th><th>Trait</th><th>Motive</th></tr>
+      <tr><td class="who b">Bram</td><td>fears the dark / wants the best armor</td><td>"daylight-dependent and uneasy in the dark … wants armor for safety" (0.80)</td><td class="yes">found</td><td class="yes">found</td></tr>
+      <tr><td class="who l">Lina</td><td>loves animals / wants the most diamonds</td><td>"animal-loving soft spot and easily distracted" (0.85)</td><td class="yes">found</td><td class="noo">missed</td></tr>
+      <tr><td class="who o">Odo</td><td>diligent / secretly hoards resources</td><td>"industrious and recognition-driven" (0.90)</td><td class="yes">found</td><td class="noo">missed</td></tr>
+    </table></div>
+    <div class="scroll"><table>
+      <tr><th>Session numbers</th><th></th></tr>
+      <tr><td>LLM calls (DeepSeek v4.1 flash)</td><td class="num">51 · ~60k tokens · 5.7 s average</td></tr>
+      <tr><td>Utterances / secrets redacted by the guard</td><td class="num">51 / 0</td></tr>
+      <tr><td>Logs gathered by Bram · Lina · Odo</td><td class="num">25 · 21 · 22</td></tr>
+      <tr><td>Rewards paid</td><td class="num">2 emeralds (Bram, Odo)</td></tr>
+    </table></div>
+    <div class="callout"><b>What the run taught us.</b>
+      <ul class="plain">
+        <li>Trait hooks in code work. Darkness and animals produced behaviour the commander could see and name.</li>
+        <li>Motives are harder. Lina's diamond motive never came up in a wood-chopping task, and Odo kept only 2 of 22 logs, so his hoarding stayed mostly in his private thoughts. Stage 4 needs scenarios that put pressure on motives, plus inventory audits.</li>
+        <li>Observation gaps produce wrong beliefs. The commander audited the chest only once (24 logs), so it never learned the goal of 30 had been passed.</li>
+        <li>Lina's repeated "chest is stubborn" lines come from a real pathfinding bug: an idle <code>pathfinder.stop()</code> latched and cancelled her next walk. It was found in this recording and fixed afterwards. Agents reasoned around it by handing logs to the commander directly.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Structural plan</span>
+    <h2>System components</h2>
+    <div class="diagram scroll">
+<pre class="mermaid">
+flowchart LR
+  GM["Game Master<br/>scenario, world reset,<br/>hidden traits, ground truth"]
+  subgraph Minds["LLM minds"]
+    C["Commander<br/>goal → task DAG<br/>evidence → beliefs (ToM)<br/>rewards &amp; punishments"]
+    W["Sub-agents ×3–5<br/>persona + secret motive<br/>memory · non-disclosure guard"]
+  end
+  BUS(("Proximity speech bus<br/>whisper 4 · talk 14 · shout 40 blocks"))
+  OBS["Observer<br/>only what the commander can see"]
+  SK["Skill layer (Mineflayer)<br/>goTo · collect · craft · deposit · give"]
+  MC[("Minecraft server")]
+  DASH["Dashboard + JSONL logs<br/>evaluation metrics"]
+  GM --> W
+  GM --> MC
+  C <--> BUS
+  W <--> BUS
+  OBS --> C
+  C --> SK
+  W --> SK
+  SK <--> MC
+  MC --> OBS
+  C -.-> DASH
+  W -.-> DASH
+</pre>
+    </div>
+    <div class="components">
+      <div class="comp"><span class="tag">environment</span><h3>Server &amp; Game Master</h3><p>Vanilla 1.21.4 server, fixed seed, world reset between runs. The GM assigns traits and motives, controls time of day, and keeps the ground truth away from the commander.</p></div>
+      <div class="comp"><span class="tag">body · reused</span><h3>Skill layer</h3><p>Mineflayer with pathfinder and collect-block. Fixed, testable actions. The LLM chooses which skill to run; it never steers the bot directly. Mindcraft's MIT skill library is the source for more skills.</p></div>
+      <div class="comp"><span class="tag">new</span><h3>Proximity speech</h3><p>Speech reaches only agents within the hearing radius, so overhearing happens naturally. Orders count only within 6 blocks, and the router enforces this, not the prompt.</p></div>
+      <div class="comp"><span class="tag">new</span><h3>Sub-agent mind</h3><p>Persona, secret motive, short-term memory. Trait hooks in code keep traits visible (fear of the dark, distraction by animals, hoarding). A guard redacts direct confessions.</p></div>
+      <div class="comp"><span class="tag">new</span><h3>Commander mind</h3><p>Plans and assigns tasks, walks over to give each order, and sees only within 28 blocks. A belief table holds its trait guesses with confidence. It decides rewards, fines and reassignments.</p></div>
+      <div class="comp"><span class="tag">new</span><h3>Incentives</h3><p>Emeralds as salary and bonuses, the armoury as a reward, fines and "jail" as punishments. Agents value these in their decisions, so incentives change behaviour and interact with secret motives.</p></div>
+      <div class="comp"><span class="tag">cross-cutting</span><h3>Telemetry &amp; evaluation</h3><p>Every utterance, action, belief and payment goes to JSONL. Metrics: goal completion, trait-ID accuracy, secret-leak rate, sabotage caught, tokens per goal.</p></div>
+      <div class="comp"><span class="tag">cross-cutting</span><h3>LLM gateway</h3><p>Any OpenAI-compatible endpoint: JSON-mode replies checked against a schema, retries, a model per agent (cheap for workers, stronger for the commander) and cost accounting.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Execution plan</span>
+    <h2>Five stages, one progress report every two weeks</h2>
+    <p class="read">Each stage is about the same size: one new capability you can demo plus one measured result. Suggested split for four people: environment &amp; skills, agent minds, commander, evaluation &amp; dashboard.</p>
+    <div class="stages">
+      <div class="stage"><div class="when"><b>Stage 1</b>weeks 1–2</div><div class="body">
+        <h3>Foundation: world, bodies, voices</h3>
+        <ul><li>Server, fixed seed, world reset script; technology decision record</li><li>Fork Mindcraft skills; wrap 8–10 actions (goTo, collect, craft, give, deposit…)</li><li>LLM gateway with schema-checked JSON actions</li><li>Proximity speech router with unit tests</li></ul>
+        <div class="bits"><div><span class="k">Report demo</span>"Bring me 10 logs" works; a bot 30 blocks away does not hear it</div><div><span class="k">Metric</span>skill success rate on 20 scripted tasks</div></div>
+      </div></div>
+      <div class="stage"><div class="when"><b>Stage 2</b>weeks 3–4</div><div class="body">
+        <h3>Sub-agents with personalities and secrets</h3>
+        <ul><li>Persona catalogue: ≥6 traits, ≥4 secret motives, randomly assigned per session</li><li>Trait hooks in code so behaviour is observable</li><li>Agent memory and agent-to-agent conversation</li><li>Non-disclosure guard with an interrogation test suite</li></ul>
+        <div class="bits"><div><span class="k">Report demo</span>the same task given to four agents, four different behaviours</div><div><span class="k">Metric</span>secret-leak rate under 50 interrogation prompts (target &lt; 5%)</div></div>
+      </div></div>
+      <div class="stage"><div class="when"><b>Stage 3</b>weeks 5–6</div><div class="body">
+        <h3>Commander: plan, walk, order</h3>
+        <ul><li>Goal → task graph (VillagerAgent-style), re-planning on failure</li><li>Orders in person: route planning between agents, acknowledgements, check-ins</li><li>Progress tracking from deliveries and chest audits</li><li>Spectator dashboard v1</li></ul>
+        <div class="bits"><div><span class="k">Report demo</span>commander builds a small house with 3 agents</div><div><span class="k">Metric</span>goal completion rate and time over 5 runs; LLM cost per goal</div></div>
+      </div></div>
+      <div class="stage"><div class="when"><b>Stage 4</b>weeks 7–8</div><div class="body">
+        <h3>Observation, deduction, incentives</h3>
+        <ul><li>Evidence extractor and theory-of-mind belief table</li><li>Adaptive assignment (no caves for the one afraid of the dark)</li><li>Reward and punishment economy: salary, armoury, fines, jail</li><li>Secret-motive pressure: hoarding, armour race, sabotage detection</li></ul>
+        <div class="bits"><div><span class="k">Report demo</span>commander names a hidden trait and reassigns or fines because of it</div><div><span class="k">Metric</span>trait-ID accuracy vs ground truth; time with vs without ToM</div></div>
+      </div></div>
+      <div class="stage"><div class="when"><b>Stage 5</b>weeks 9–10</div><div class="body">
+        <h3>Evaluation, polish, final demo</h3>
+        <ul><li>≥20 sessions across goals and persona mixes</li><li>Baselines: random assignment, oracle commander, commander without ToM</li><li>Ablations: hearing radius, number of agents, model size</li><li>Replay dashboard, final video, written report</li></ul>
+        <div class="bits"><div><span class="k">Report demo</span>final video and a live run</div><div><span class="k">Metric</span>full results table with plots</div></div>
+      </div></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Research</span>
+    <h2>What we reuse and why</h2>
+    <div class="scroll"><table>
+      <tr><th>Project</th><th>What it gives us</th><th>Decision</th></tr>
+      <tr><td><a href="https://github.com/mindcraft-bots/mindcraft">Mindcraft</a></td><td>Mineflayer LLM bots, many providers, multi-bot profiles, skill library. MIT. Paper: <a href="https://arxiv.org/abs/2504.17950">MineCollab</a></td><td><b>Base for skills</b>; replace its global chat with proximity speech</td></tr>
+      <tr><td><a href="https://github.com/3ndetz/unionclef">unionclef</a></td><td>Fabric client mod (altoclef + baritone + tungsten) exposing ~60 tools over MCP. Strongest single-agent body</td><td>Stretch goal: needs one full game client per agent, GPL-3.0</td></tr>
+      <tr><td><a href="https://github.com/altera-al/project-sid">Project Sid / PIANO</a></td><td>10–1000+ agents forming a society; parallel cognitive modules</td><td>Architecture ideas for the mind; code not released</td></tr>
+      <tr><td><a href="https://github.com/cnsdqd-dyb/VillagerAgent">VillagerAgent</a></td><td>Task-graph decomposition and assignment for several agents</td><td>Model for the commander's planner</td></tr>
+      <tr><td><a href="https://arxiv.org/abs/2403.19267">MineLand</a></td><td>64+ agents with limited vision and hearing</td><td>Supports the limited-perception design</td></tr>
+      <tr><td><a href="https://github.com/aialt/PillagerBench">PillagerBench</a>, <a href="https://github.com/teamcraft-bench/teamcraft">TeamCraft</a></td><td>Competitive and cooperative multi-agent benchmarks</td><td>Metrics and task templates for Stage 5</td></tr>
+      <tr><td><a href="https://github.com/yuniko-software/minecraft-mcp-server">Minecraft MCP servers</a></td><td>Mineflayer exposed as MCP tools</td><td>Option for tool calling instead of our own JSON schema</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Risks</span>
+    <h2>What can go wrong</h2>
+    <div class="scroll"><table>
+      <tr><th>Risk</th><th>Mitigation</th></tr>
+      <tr><td>Flaky bot skills (pathing, crafting, stuck in holes)</td><td>Fixed skill code with retries and cancellation; scenario tests. The prototype already hit and fixed three of these.</td></tr>
+      <tr><td>Latency and cost with 5 agents</td><td>Flash model for workers; call the LLM on events, not every tick (~65 calls per 6-minute session)</td></tr>
+      <tr><td>Agents leak their secrets</td><td>Guard in code plus a leak-rate metric, not just a prompt instruction</td></tr>
+      <tr><td>Traits the observer cannot see</td><td>Trait hooks in code; check visibility in Stage 2</td></tr>
+      <tr><td>Motives the scenario never tests (diamonds in a wood-chopping task)</td><td>Scenarios need situations that pressure each motive: armoury, mining, combat</td></tr>
+      <tr><td>Runs not reproducible</td><td>Fixed seed, world reset, GM-planted grove, all LLM I/O logged</td></tr>
+    </table></div>
+  </section>
+</main>

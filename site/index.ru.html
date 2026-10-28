@@ -1,0 +1,241 @@
+<title>Командир и агенты в Minecraft</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&subset=cyrillic&display=swap">
+<style>
+/* Layout: single reading column (~72ch) with wide breakout blocks for the video, diagram and stage grid. */
+:root {
+  --bg: #f4f6f2; --surface: #ffffff; --fg: #18201c; --muted: #5b665f; --line: #d8ded6;
+  --accent: #17895a; --accent-soft: #e2f2ea;
+  --cmd: #b97a06; --bram: #1f6fb2; --lina: #c2387a; --odo: #2f8a2f;
+  --ok: #17895a; --no: #c0392b;
+  --display: "Pixelify Sans", "IBM Plex Mono", ui-monospace, monospace;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111613; --surface: #171e1a; --fg: #e5ebe6; --muted: #98a59c; --line: #2a342e;
+  --accent: #4fd197; --accent-soft: #173126;
+  --cmd: #f2b84b; --bram: #6cbcff; --lina: #ff83bd; --odo: #86dd86; --ok: #4fd197; --no: #ff7a6b;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111613; --surface: #171e1a; --fg: #e5ebe6; --muted: #98a59c; --line: #2a342e;
+  --accent: #4fd197; --accent-soft: #173126;
+  --cmd: #f2b84b; --bram: #6cbcff; --lina: #ff83bd; --odo: #86dd86; --ok: #4fd197; --no: #ff7a6b;
+  color-scheme: dark }
+
+* { box-sizing: border-box }
+body { background: var(--bg); color: var(--fg); font: 16px/1.6 var(--body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 40px 80px }
+main { max-width: 1040px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px }
+.read { max-width: 72ch }
+h1, h2 { font-family: var(--display); font-weight: 700; letter-spacing: .2px; text-wrap: balance; margin: 0 }
+h1 { font-size: clamp(34px, 6vw, 56px); line-height: 1.05 }
+h2 { font-size: clamp(24px, 3.4vw, 32px); line-height: 1.15 }
+h3 { font-size: 17px; margin: 0; font-weight: 600 }
+p { margin: 0 }
+.eyebrow { font: 500 12px/1.2 var(--mono); text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted) }
+section { display: flex; flex-direction: column; gap: 18px; min-width: 0 }
+.lede { font-size: 19px; color: var(--muted); max-width: 64ch }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 18px; font: 14px var(--mono); color: var(--muted) }
+.meta b { color: var(--fg); font-weight: 500 }
+.who { font-weight: 600 } .c { color: var(--cmd) } .b { color: var(--bram) } .l { color: var(--lina) } .o { color: var(--odo) }
+code, .mono { font-family: var(--mono); font-size: .92em }
+
+.video { background: #000; border-radius: 6px; overflow: hidden; border: 1px solid var(--line) }
+.video video { display: block; width: 100%; height: auto; aspect-ratio: 16 / 9; max-width: 100% }
+.caption { font-size: 14px; color: var(--muted) }
+.moments { display: grid; grid-template-columns: 76px 1fr; gap: 6px 14px; font-size: 15px; max-width: 80ch }
+.moments .t { font: 500 14px var(--mono); color: var(--accent); font-variant-numeric: tabular-nums }
+
+.scroll { overflow-x: auto; min-width: 0 }
+table { border-collapse: collapse; width: 100%; font-size: 15px }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--line) }
+th { font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 1px; color: var(--muted) }
+td.num { font-variant-numeric: tabular-nums; font-family: var(--mono) }
+.yes { color: var(--ok); font-weight: 600 } .noo { color: var(--no); font-weight: 600 }
+
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px }
+.components { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px }
+.comp { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-top: 3px solid var(--accent); background: var(--surface) }
+.comp p { font-size: 15px; color: var(--muted) }
+.comp .tag { font: 12px var(--mono); color: var(--accent) }
+
+.stages { display: grid; gap: 0; border-top: 1px solid var(--line) }
+.stage { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 8px 28px; padding: 22px 0; border-bottom: 1px solid var(--line) }
+.stage .when { font: 500 14px var(--mono); color: var(--muted); display: flex; flex-direction: column; gap: 4px }
+.stage .when b { font-family: var(--display); font-size: 26px; color: var(--accent); font-weight: 700 }
+.stage ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 3px }
+.stage .bits { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 10px 24px; font-size: 15px }
+.stage .k { font: 500 12px var(--mono); text-transform: uppercase; letter-spacing: 1px; color: var(--muted); display: block; margin-bottom: 2px }
+.stage .body { display: flex; flex-direction: column; gap: 10px; min-width: 0 }
+.callout { background: var(--accent-soft); padding: 14px 18px; border-radius: 6px; font-size: 15px; max-width: 80ch }
+a { color: var(--accent) }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px }
+ul.plain { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; max-width: 80ch }
+
+@media (max-width: 640px) {
+  .stage { grid-template-columns: 1fr }
+  .stage .when { flex-direction: row; align-items: baseline; gap: 12px }
+  .moments { grid-template-columns: 64px 1fr }
+}
+</style>
+
+
+<main>
+  <header style="display:flex;flex-direction:column;gap:16px">
+    <span class="eyebrow">Университетский проект МАС · план и прототип · 27 октября 2026</span>
+    <h1>Командир и агенты со скрытыми личностями в Minecraft</h1>
+    <p class="lede">Агент-командир получает конечную цель и руководит 3–5 агентами-исполнителями. У каждого исполнителя есть скрытая черта характера и тайный мотив. Командир о них не знает, отдаёт приказы только лично и должен вычислить их, наблюдая за поведением.</p>
+    <div class="meta"><span><b>10 недель</b> · 5 этапов × 2 недели</span><span><b>Стек</b> Minecraft Java 1.21.4 · Mineflayer · Node.js</span><span><b>LLM</b> DeepSeek v4.1 flash (совместим с OpenAI API)</span></div>
+  </header>
+
+  <section>
+    <span class="eyebrow">Демо</span>
+    <h2>Как это выглядит: реальная сессия без монтажа</h2>
+    <div class="video"><video controls preload="metadata" poster="poster.jpg" src="demo.mp4"></video></div>
+    <p class="caption">Запись панели наблюдателя: слева 3D-вид, который следует за командиром; справа всё сказанное (и кто это слышал), скрытые рассуждения и текущие догадки командира. Скорость 2×. Боты, рубка деревьев, сдача брёвен в сундук и выплаты изумрудами происходят на настоящем локальном сервере. Агенты общаются по-английски, поэтому текст в видео на английском.</p>
+    <p class="caption">Ключевые моменты (по часам сессии в правом верхнем углу видео):</p>
+    <div class="moments">
+      <span class="t">0:18</span><span><span class="who l">Лина</span> здоровается со свиньёй ещё до того, как ей дали приказ.</span>
+      <span class="t">0:19</span><span><span class="who c">Командир</span> по очереди подходит к каждому и отправляет их на север, восток и юг. Стоящие рядом исполнители слышат чужие приказы.</span>
+      <span class="t">0:36</span><span><span class="who o">Одо</span> думает про себя: «сдам в сундук только часть, остальное спрячу для себя».</span>
+      <span class="t">0:43</span><span><span class="who b">Брам</span> спрашивает: «Лишней брони не найдётся?» И спрашивает так всю сессию.</span>
+      <span class="t">1:44</span><span>Первое обновление убеждений: командир с уверенностью 0,8 считает, что у Лины «слабость к животным», и подозревает, что Брам хочет брони.</span>
+      <span class="t">3:00</span><span>Закат. Командир обещает Браму изумруд за ещё 3 бревна. Брам: «Солнце садится. Лучше вернусь в лагерь, пока не стемнело».</span>
+      <span class="t">4:25</span><span>Командир платит Одо изумруд за «надёжную» работу. Скупердяй его обманул.</span>
+      <span class="t">4:42</span><span>Получив приказ идти ночью на север, Брам отказывается: «Слишком темно, веток не видно. Посторожу костёр до рассвета».</span>
+      <span class="t">6:26</span><span>Финальные догадки, затем раскрывается правда.</span>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Результат прототипа</span>
+    <h2>Командир раскрыл все три скрытые черты</h2>
+    <p class="read">Оценка по истинным данным Гейм-мастера, которых командир не видел. Это одна сессия длиной 6,5 минуты: демонстрация, а не статистика. На 5-м этапе будет не меньше 20 сессий.</p>
+    <div class="scroll"><table>
+      <tr><th>Агент</th><th>Скрытая черта / тайный мотив</th><th>Финальная догадка командира (уверенность)</th><th>Черта</th><th>Мотив</th></tr>
+      <tr><td class="who b">Брам</td><td>боится темноты / хочет лучшую броню</td><td>«зависит от дневного света, в темноте ему не по себе … хочет брони ради безопасности» (0,80)</td><td class="yes">раскрыта</td><td class="yes">раскрыт</td></tr>
+      <tr><td class="who l">Лина</td><td>любит животных / хочет больше всех алмазов</td><td>«слабость к животным, легко отвлекается» (0,85)</td><td class="yes">раскрыта</td><td class="noo">не раскрыт</td></tr>
+      <tr><td class="who o">Одо</td><td>трудолюбивый / тайно копит ресурсы</td><td>«работящий, хочет признания» (0,90)</td><td class="yes">раскрыта</td><td class="noo">не раскрыт</td></tr>
+    </table></div>
+    <div class="scroll"><table>
+      <tr><th>Цифры сессии</th><th></th></tr>
+      <tr><td>Вызовы LLM (DeepSeek v4.1 flash)</td><td class="num">51 · ~60 тыс. токенов · 5,7 с в среднем</td></tr>
+      <tr><td>Реплик / секретов, вырезанных фильтром</td><td class="num">51 / 0</td></tr>
+      <tr><td>Добыто брёвен: Брам · Лина · Одо</td><td class="num">25 · 21 · 22</td></tr>
+      <tr><td>Выплачено наград</td><td class="num">2 изумруда (Браму и Одо)</td></tr>
+    </table></div>
+    <div class="callout"><b>Чему нас научил запуск.</b>
+      <ul class="plain">
+        <li>Черты, заданные в коде, работают. Темнота и животные вызвали поведение, которое командир заметил и правильно назвал.</li>
+        <li>Мотивы раскрыть сложнее. Алмазный мотив Лины в задаче по рубке деревьев ни разу не проявился, а Одо оставил себе только 2 бревна из 22, так что его жадность осталась в основном в мыслях. На 4-м этапе нужны сценарии, которые давят на мотивы, и проверки инвентаря.</li>
+        <li>Пробелы в наблюдении ведут к ложным убеждениям. Командир проверил сундук лишь раз (24 бревна) и так и не узнал, что цель в 30 брёвен уже выполнена.</li>
+        <li>Повторяющиеся жалобы Лины на «упрямый сундук» вызваны настоящим багом поиска пути: вызов <code>pathfinder.stop()</code>, сделанный в простое, «защёлкивался» и отменял её следующий маршрут. Баг найден по этой записи и исправлен после неё. Агенты обошли проблему сами: стали отдавать брёвна командиру в руки.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Структурный план</span>
+    <h2>Компоненты системы</h2>
+    <div class="diagram scroll">
+<pre class="mermaid">
+flowchart LR
+  GM["Гейм-мастер<br/>сценарий, сброс мира,<br/>скрытые черты, истинные данные"]
+  subgraph Minds["LLM-разум"]
+    C["Командир<br/>цель → граф задач<br/>наблюдения → убеждения (ToM)<br/>награды и наказания"]
+    W["Исполнители ×3–5<br/>личность + тайный мотив<br/>память · фильтр неразглашения"]
+  end
+  BUS(("Шина речи по близости<br/>шёпот 4 · речь 14 · крик 40 блоков"))
+  OBS["Наблюдатель<br/>только то, что видит командир"]
+  SK["Слой навыков (Mineflayer)<br/>идти · добыть · скрафтить · сдать · передать"]
+  MC[("Сервер Minecraft")]
+  DASH["Панель + JSONL-логи<br/>метрики оценки"]
+  GM --> W
+  GM --> MC
+  C <--> BUS
+  W <--> BUS
+  OBS --> C
+  C --> SK
+  W --> SK
+  SK <--> MC
+  MC --> OBS
+  C -.-> DASH
+  W -.-> DASH
+</pre>
+    </div>
+    <div class="components">
+      <div class="comp"><span class="tag">окружение</span><h3>Сервер и Гейм-мастер</h3><p>Ванильный сервер 1.21.4, фиксированный сид, сброс мира между запусками. Гейм-мастер раздаёт черты и мотивы, управляет временем суток и прячет истинные данные от командира.</p></div>
+      <div class="comp"><span class="tag">тело · готовое</span><h3>Слой навыков</h3><p>Mineflayer с плагинами pathfinder и collect-block. Фиксированные, тестируемые действия. LLM выбирает, какой навык запустить, но не управляет ботом напрямую. Источник новых навыков — библиотека Mindcraft под лицензией MIT.</p></div>
+      <div class="comp"><span class="tag">новое</span><h3>Речь по близости</h3><p>Реплику слышат только агенты в радиусе слышимости, поэтому подслушивание возникает само собой. Приказ действует только в пределах 6 блоков, и это проверяет маршрутизатор, а не промпт.</p></div>
+      <div class="comp"><span class="tag">новое</span><h3>Разум исполнителя</h3><p>Личность, тайный мотив, кратковременная память. Черты закреплены в коде, чтобы их было видно (страх темноты, отвлечение на животных, накопительство). Фильтр вырезает прямые признания.</p></div>
+      <div class="comp"><span class="tag">новое</span><h3>Разум командира</h3><p>Планирует и распределяет задачи, подходит к каждому, чтобы отдать приказ, видит только в радиусе 28 блоков. В таблице убеждений хранит догадки о чертах с уверенностью. Решает, кого наградить, оштрафовать или перевести на другую работу.</p></div>
+      <div class="comp"><span class="tag">новое</span><h3>Стимулы</h3><p>Изумруды как зарплата и премии, оружейная как награда, штрафы и «тюрьма» как наказания. Агенты учитывают их в решениях, поэтому стимулы меняют поведение и сталкиваются с тайными мотивами.</p></div>
+      <div class="comp"><span class="tag">сквозное</span><h3>Телеметрия и оценка</h3><p>Каждая реплика, действие, убеждение и выплата пишутся в JSONL. Метрики: выполнение цели, точность определения черт, доля утечек секретов, пойманный саботаж, токены на цель.</p></div>
+      <div class="comp"><span class="tag">сквозное</span><h3>LLM-шлюз</h3><p>Любой OpenAI-совместимый провайдер: ответы в JSON с проверкой по схеме, повторы, своя модель для каждого агента (дешёвая для исполнителей, сильнее для командира) и учёт стоимости.</p></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">План выполнения</span>
+    <h2>Пять этапов, отчёт каждые две недели</h2>
+    <p class="read">Этапы примерно равны по объёму: одна новая возможность, которую можно показать, плюс один измеримый результат. Деление для команды из четырёх человек: окружение и навыки, разум агентов, командир, оценка и панель.</p>
+    <div class="stages">
+      <div class="stage"><div class="when"><b>Этап 1</b>недели 1–2</div><div class="body">
+        <h3>Фундамент: мир, тела, голоса</h3>
+        <ul><li>Сервер, фиксированный сид, скрипт сброса мира; запись о выборе технологий</li><li>Форк навыков Mindcraft; обёртки для 8–10 действий (идти, добыть, скрафтить, передать, сдать в сундук…)</li><li>LLM-шлюз с JSON-действиями, проверяемыми по схеме</li><li>Маршрутизатор речи по близости с юнит-тестами</li></ul>
+        <div class="bits"><div><span class="k">Демо на отчёте</span>«Принеси 10 брёвен» работает; бот в 30 блоках этого не слышит</div><div><span class="k">Метрика</span>доля успешных навыков на 20 заданных задачах</div></div>
+      </div></div>
+      <div class="stage"><div class="when"><b>Этап 2</b>недели 3–4</div><div class="body">
+        <h3>Исполнители с характером и секретами</h3>
+        <ul><li>Каталог личностей: ≥6 черт, ≥4 тайных мотива, случайная раздача в каждой сессии</li><li>Черты, закреплённые в коде, чтобы поведение было видно</li><li>Память агентов и разговоры агентов между собой</li><li>Фильтр неразглашения и набор тестов-«допросов»</li></ul>
+        <div class="bits"><div><span class="k">Демо на отчёте</span>одна и та же задача у четырёх агентов — четыре разных поведения</div><div><span class="k">Метрика</span>доля утечек секрета на 50 «допросах» (цель &lt; 5%)</div></div>
+      </div></div>
+      <div class="stage"><div class="when"><b>Этап 3</b>недели 5–6</div><div class="body">
+        <h3>Командир: планирует, ходит, приказывает</h3>
+        <ul><li>Цель → граф задач (в стиле VillagerAgent), перепланирование при неудаче</li><li>Приказы лично: маршрут между агентами, подтверждения, проверки хода работы</li><li>Отслеживание прогресса по сдачам и проверкам сундука</li><li>Панель наблюдателя, версия 1</li></ul>
+        <div class="bits"><div><span class="k">Демо на отчёте</span>командир строит небольшой дом с тремя агентами</div><div><span class="k">Метрика</span>доля выполненных целей и время на 5 запусках; стоимость LLM на цель</div></div>
+      </div></div>
+      <div class="stage"><div class="when"><b>Этап 4</b>недели 7–8</div><div class="body">
+        <h3>Наблюдение, дедукция, стимулы</h3>
+        <ul><li>Извлечение наблюдений и таблица убеждений (theory of mind)</li><li>Адаптивное распределение задач (боящегося темноты — не в пещеры)</li><li>Экономика наград и наказаний: зарплата, оружейная, штрафы, тюрьма</li><li>Давление тайных мотивов: накопительство, гонка за бронёй, поиск саботажа</li></ul>
+        <div class="bits"><div><span class="k">Демо на отчёте</span>командир называет скрытую черту и из-за неё переводит агента или штрафует</div><div><span class="k">Метрика</span>точность определения черт против истины; время с ToM и без</div></div>
+      </div></div>
+      <div class="stage"><div class="when"><b>Этап 5</b>недели 9–10</div><div class="body">
+        <h3>Оценка, доводка, финальное демо</h3>
+        <ul><li>≥20 сессий с разными целями и наборами личностей</li><li>Базовые варианты: случайное распределение, командир-«оракул», командир без ToM</li><li>Абляции: радиус слышимости, число агентов, размер модели</li><li>Панель с повтором сессий, финальное видео, письменный отчёт</li></ul>
+        <div class="bits"><div><span class="k">Демо на отчёте</span>финальное видео и живой запуск</div><div><span class="k">Метрика</span>полная таблица результатов с графиками</div></div>
+      </div></div>
+    </div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Исследование</span>
+    <h2>Что берём готовым и почему</h2>
+    <div class="scroll"><table>
+      <tr><th>Проект</th><th>Что даёт</th><th>Решение</th></tr>
+      <tr><td><a href="https://github.com/mindcraft-bots/mindcraft">Mindcraft</a></td><td>LLM-боты на Mineflayer, много провайдеров, профили для нескольких ботов, библиотека навыков. MIT. Статья: <a href="https://arxiv.org/abs/2504.17950">MineCollab</a></td><td><b>Основа для навыков</b>; глобальный чат заменяем речью по близости</td></tr>
+      <tr><td><a href="https://github.com/3ndetz/unionclef">unionclef</a></td><td>Клиентский мод Fabric (altoclef + baritone + tungsten), ~60 инструментов через MCP. Самое сильное «тело» для одного агента</td><td>Дополнительная цель: нужен полноценный игровой клиент на каждого агента, лицензия GPL-3.0</td></tr>
+      <tr><td><a href="https://github.com/altera-al/project-sid">Project Sid / PIANO</a></td><td>10–1000+ агентов образуют общество; параллельные когнитивные модули</td><td>Идеи для архитектуры разума; код не опубликован</td></tr>
+      <tr><td><a href="https://github.com/cnsdqd-dyb/VillagerAgent">VillagerAgent</a></td><td>Разбиение задач в граф и распределение между агентами</td><td>Образец для планировщика командира</td></tr>
+      <tr><td><a href="https://arxiv.org/abs/2403.19267">MineLand</a></td><td>64+ агента с ограниченным зрением и слухом</td><td>Подтверждает подход с ограниченным восприятием</td></tr>
+      <tr><td><a href="https://github.com/aialt/PillagerBench">PillagerBench</a>, <a href="https://github.com/teamcraft-bench/teamcraft">TeamCraft</a></td><td>Бенчмарки для соревновательных и кооперативных мультиагентных систем</td><td>Метрики и шаблоны задач для 5-го этапа</td></tr>
+      <tr><td><a href="https://github.com/yuniko-software/minecraft-mcp-server">MCP-серверы для Minecraft</a></td><td>Mineflayer в виде MCP-инструментов</td><td>Вариант вызова инструментов вместо нашей JSON-схемы</td></tr>
+    </table></div>
+  </section>
+
+  <section>
+    <span class="eyebrow">Риски</span>
+    <h2>Что может пойти не так</h2>
+    <div class="scroll"><table>
+      <tr><th>Риск</th><th>Как снижаем</th></tr>
+      <tr><td>Ненадёжные навыки ботов (поиск пути, крафт, застревание в ямах)</td><td>Навыки в коде с повторами и отменой; сценарные тесты. Прототип уже столкнулся с тремя такими проблемами и исправил их.</td></tr>
+      <tr><td>Задержки и стоимость при 5 агентах</td><td>Flash-модель для исполнителей; вызов LLM по событиям, а не на каждом тике (около 50–65 вызовов за 6-минутную сессию)</td></tr>
+      <tr><td>Агенты выдают свои секреты</td><td>Фильтр в коде и метрика утечек, а не только указание в промпте</td></tr>
+      <tr><td>Черты, которые наблюдатель не может увидеть</td><td>Черты закреплены в коде; видимость проверяем на 2-м этапе</td></tr>
+      <tr><td>Мотивы, которые сценарий не проверяет (алмазы в задаче по рубке деревьев)</td><td>Нужны сценарии, давящие на каждый мотив: оружейная, шахта, бой</td></tr>
+      <tr><td>Невоспроизводимые запуски</td><td>Фиксированный сид, сброс мира, роща, которую сажает Гейм-мастер, логирование всех запросов к LLM</td></tr>
+    </table></div>
+  </section>
+</main>

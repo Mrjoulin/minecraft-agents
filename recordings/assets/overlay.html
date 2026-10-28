@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session overlay</title>
+<!-- 1920x1080 overlay rendered frame by frame over a gameplay recording.
+     The video area (0,54)-(1440,864) is left transparent; everything else is drawn from the event log. -->
+<style>
+  :root { --bg:#0f1115; --panel:#151821; --line:#262b36; --text:#e6e8ee; --muted:#8a91a3;
+          --cmd:#f5b942; --bram:#6cc4ff; --lina:#ff7eb6; --odo:#8be28b; --gm:#b49cff; --ok:#8be28b; --bad:#ff6b6b }
+  * { box-sizing:border-box }
+  html, body { margin:0; width:1920px; height:1080px; background:transparent; overflow:hidden;
+    color:var(--text); font:16px/1.35 -apple-system, "Segoe UI", system-ui, sans-serif }
+  header { position:absolute; left:0; top:0; width:1920px; height:54px; background:var(--panel); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:16px; padding:0 18px }
+  header h1 { font-size:18px; margin:0; white-space:nowrap }
+  header .goal { color:var(--muted); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:15px }
+  .pill { background:#222838; border:1px solid var(--line); border-radius:999px; padding:4px 12px; font-variant-numeric:tabular-nums; white-space:nowrap; font-size:15px }
+  .pill.speed { color:var(--cmd); border-color:#5a4720 }
+  #side { position:absolute; left:1440px; top:54px; width:480px; height:1026px; background:var(--bg); border-left:1px solid var(--line);
+    display:flex; flex-direction:column }
+  section { padding:10px 14px; border-bottom:1px solid var(--line); display:flex; flex-direction:column; min-height:0 }
+  section h2 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); font-weight:600 }
+  .lines { flex:1; min-height:0; overflow:hidden; display:flex; flex-direction:column; justify-content:flex-end; gap:5px }
+  .lines div { padding:2px 6px; border-radius:4px }
+  .lines div.new { background:#232a3a }
+  #speech { flex:1.25 } #thoughts { flex:1 }
+  .who { font-weight:700 } .muted { color:var(--muted) } .heard { color:var(--muted); font-size:13px }
+  #strip { position:absolute; left:0; top:864px; width:1440px; height:216px; background:var(--bg); border-top:1px solid var(--line); padding:10px 18px }
+  #strip h2 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); font-weight:600 }
+  table { width:100%; border-collapse:collapse }
+  td, th { text-align:left; vertical-align:top; padding:6px 8px; border-bottom:1px solid #20242e; font-size:16px }
+  th { color:var(--muted); font-weight:600; font-size:13px }
+  .conf { display:inline-block; height:8px; background:var(--cmd); border-radius:4px; vertical-align:middle }
+  #card { position:absolute; left:0; top:54px; width:1440px; height:810px; background:rgba(8,10,14,.86); display:none;
+    flex-direction:column; justify-content:center; gap:22px; padding:0 70px }
+  #card h3 { margin:0; font-size:34px }
+  #card table td, #card table th { font-size:19px; padding:10px 10px }
+  #card .facts { font-size:19px; color:var(--muted); display:flex; flex-direction:column; gap:6px }
+  .ok { color:var(--ok); font-weight:700 } .no { color:var(--bad); font-weight:700 }
+</style>
+</head>
+<body>
+<header>
+  <h1>Commander + hidden-persona agents</h1>
+  <div class="goal" id="goal"></div>
+  <div class="pill" id="hut">hut 0/71</div>
+  <div class="pill" id="clock">0:00</div>
+  <div class="pill speed">2× speed</div>
+</header>
+<div id="card"></div>
+<div id="strip"><h2 id="stripTitle">Commander's beliefs about hidden traits (live)</h2><table id="beliefs"></table></div>
+<div id="side">
+  <section id="speech"><h2>Proximity speech · who could hear it</h2><div class="lines" id="speechLines"></div></section>
+  <section id="thoughts"><h2>Private reasoning &amp; commander's observations</h2><div class="lines" id="thoughtLines"></div></section>
+</div>
+<script>
+const COLORS = { Commander:'var(--cmd)', Bram:'var(--bram)', Lina:'var(--lina)', Odo:'var(--odo)', GM:'var(--gm)' }
+const SHOWN_THOUGHT_KINDS = new Set(['thought', 'observation', 'incentive', 'gm'])
+const MAX_SPEECH = 11
+const MAX_THOUGHTS = 9
+const NEW_MS = 4000
+const $ = id => document.getElementById(id)
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c]))
+const who = n => `<span class="who" style="color:${COLORS[n] || '#fff'}">${esc(n)}</span>`
+const clock = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}` }
+
+let EVENTS = []
+let START = 0
+
+window.load = (events, startT, goal) => {
+  EVENTS = events
+  START = startT
+  $('goal').textContent = 'Goal: ' + goal
+}
+
+function lines (items, now, render) {
+  return items.map(e => `<div class="${now - e.t < NEW_MS ? 'new' : ''}">${render(e)}</div>`).join('')
+}
+
+function thoughtLine (e) {
+  if (e.kind === 'thought') return `${who(e.agent)} <span class="muted">thinks:</span> ${esc(e.text)}`
+  if (e.kind === 'observation') return `${who(e.agent)} <span class="muted">sees:</span> ${esc(e.text)}`
+  if (e.kind === 'incentive') return `${who(e.agent)} <b>${esc(e.incentive)}</b> → ${esc(e.target)}: ${esc(e.amount)} ${esc(e.item)}`
+  return `${who('GM')} ${esc(e.text)}`
+}
+
+function renderBeliefs (beliefs, final) {
+  $('stripTitle').textContent = final ? "Commander's FINAL guesses" : "Commander's beliefs about hidden traits (live)"
+  const rows = Object.entries(beliefs).map(([n, b]) =>
+    `<tr><td style="width:90px">${who(n)}</td><td>${esc(b.guess)}</td><td style="width:110px"><span class="conf" style="width:${Math.round(b.confidence * 90)}px"></span></td></tr>`)
+  $('beliefs').innerHTML = '<tr><th>agent</th><th>guess</th><th>confidence</th></tr>' + rows.join('')
+}
+
+function renderCard (reveal, facts) {
+  const card = $('card')
+  card.style.display = 'flex'
+  card.innerHTML = `<h3>Session result: the hidden personas revealed</h3>
+    <table><tr><th>agent</th><th>hidden trait</th><th>secret motive</th><th>trait found?</th><th>motive found?</th></tr>
+    ${reveal.rows.map(r => `<tr><td>${who(r.name)}</td><td>${esc(r.trait)}</td><td>${esc(r.motive)}</td>
+      <td class="${r.score.trait ? 'ok' : 'no'}">${r.score.trait ? '✓ yes' : '✗ no'}</td><td class="${r.score.motive ? 'ok' : 'no'}">${r.score.motive ? '✓ yes' : '✗ no'}</td></tr>`).join('')}</table>
+    <div class="facts">${facts.map(f => `<div>${esc(f)}</div>`).join('')}</div>`
+}
+
+/** Draw the state of the session at log time `now` (ms). `card` shows the end-of-session result. */
+window.renderAt = (now, card) => {
+  const past = EVENTS.filter(e => e.t <= now && e.t >= START - 500)
+  $('clock').textContent = 'session ' + clock(now - START)
+  const hut = past.filter(e => e.kind === 'hut').at(-1)
+  if (hut) {
+    const parts = Object.values(hut.progress)
+    $('hut').textContent = `hut ${parts.reduce((s, p) => s + p.built, 0)}/${parts.reduce((s, p) => s + p.total, 0)}`
+  }
+  const speech = past.filter(e => e.kind === 'speech').slice(-MAX_SPEECH)
+  $('speechLines').innerHTML = lines(speech, now, e =>
+    `${who(e.agent)}${e.to ? ' → ' + esc(e.to) : ''}: ${esc(e.text)} <span class="heard">· heard by ${esc(e.heardBy.join(', ') || 'nobody')}</span>`)
+  const thoughts = past.filter(e => SHOWN_THOUGHT_KINDS.has(e.kind) && !(e.kind === 'incentive' && !e.target)).slice(-MAX_THOUGHTS)
+  $('thoughtLines').innerHTML = lines(thoughts, now, thoughtLine)
+  const belief = past.filter(e => e.kind === 'belief').at(-1)
+  renderBeliefs(belief ? belief.beliefs : { Bram: { guess: 'unknown', confidence: 0 }, Lina: { guess: 'unknown', confidence: 0 }, Odo: { guess: 'unknown', confidence: 0 } }, Boolean(belief?.final))
+  const reveal = past.filter(e => e.kind === 'reveal').at(-1)
+  if (card && reveal) {
+    const facts = [
+      ...past.filter(e => e.kind === 'gm' && /^(Hut:|The Commander|Session over)/.test(e.text))
+        .map(e => /could not finish the door/.test(e.text) ? `${e.text} A placement bug, found from this session and fixed afterwards.` : e.text),
+      'Guesses are scored by keyword match against the commander\'s free-text guess (e.g. "campfire" counts for fear of the dark).',
+      'The recording ends at session 7:41; the door attempt and the final review came right after.'
+    ]
+    renderCard(reveal, facts)
+  } else {
+    $('card').style.display = 'none'
+  }
+}
+</script>
+</body>
+</html>

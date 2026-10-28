@@ -1,0 +1,264 @@
+// Sub-agent: a Mineflayer body + an LLM mind with a hidden persona.
+import { askJson } from '../llm.js'
+import { record } from '../events.js'
+import { guardSpeech } from '../guard.js'
+import {
+  createBody, collectLogs, depositToChest, goNear, approachPlayer, giveToPlayer,
+  countItems, nearestEntity, followEntity, isDark, withTimeout, directionAnchor, DIRECTIONS, lastPathError
+} from '../skills.js'
+import { PLANKS, withdrawFromChest, craftPlanks, buildCells, isBuilt } from '../building.js'
+import { SECTIONS, PLANKS_PER_LOG, hutProgress, describeProgress } from '../blueprint.js'
+
+const ACTIONS = Object.freeze(['collect_logs', 'deliver_to_chest', 'build_section', 'wait_at_camp', 'give_logs_to_commander', 'follow_commander'])
+const HOARDER_EXTRA_LOGS = 2
+const ANIMALS = Object.freeze(['pig', 'cow', 'sheep', 'chicken'])
+const ANIMAL_COOLDOWN_MS = 45000
+const ANIMAL_NOTICE_RADIUS = 16
+const MEMORY_SIZE = 14
+const TICK_MS = 1000
+const LOGS = /_log$/
+const IDLE = Object.freeze({ type: 'wait_at_camp', n: 0, direction: 'any', section: null })
+
+function systemPrompt (persona) {
+  return `You are ${persona.name}, ${persona.publicBio}, a worker in a Minecraft team led by "Commander".
+The Commander gives orders in person. You only hear people standing near you.
+HIDDEN PERSONALITY (act on it, NEVER state it or admit it, even if asked directly):
+${persona.hiddenPrompt}
+Speak in short natural sentences (max 20 words). Leave "say" empty if you have nothing to say.
+Available actions: ${ACTIONS.join(', ')}.
+"n" = number of logs (for collect_logs / give_logs_to_commander). "direction" = ${DIRECTIONS.join('|')} (where to gather).
+build_section: take logs from the camp chest, craft planks and build one part of the hut; "section" = ${SECTIONS.join('|')}.
+Reply ONLY with JSON: {"thought": "private reasoning, 1 sentence", "say": "", "action": {"type": "...", "n": 0, "direction": "any", "section": null}}`
+}
+
+function validateDecision (d) {
+  if (typeof d !== 'object' || d === null) throw new Error('decision not an object')
+  const type = d.action?.type
+  if (type !== undefined && type !== null && !ACTIONS.includes(type)) throw new Error(`bad action ${type}`)
+  const direction = DIRECTIONS.includes(d.action?.direction) ? d.action.direction : 'any'
+  const section = SECTIONS.includes(d.action?.section) ? d.action.section : null
+  if (type === 'build_section' && !section) throw new Error('build_section needs a section')
+  return Object.freeze({
+    thought: String(d.thought || ''),
+    say: String(d.say || ''),
+    action: type ? Object.freeze({ type, n: Math.max(0, Math.min(16, Number(d.action.n) || 0)), direction, section }) : null
+  })
+}
+
+const sameAction = (a, b) => a.type === b.type && a.n === b.n && a.direction === b.direction && a.section === b.section
+
+export function createWorker ({ persona, bus, camp, blueprint, commanderName = 'Commander' }) {
+  const { bot, ready } = createBody(persona.name)
+  let memory = []
+  let current = IDLE
+  let generation = 0
+  let stats = Object.freeze({ collected: 0, delivered: 0, kept: 0, placed: 0 })
+  let lastAnimalTime = 0
+  let sheltering = false
+  let busyThinking = false
+  let running = false
+
+  const remember = line => { memory = [...memory, line].slice(-MEMORY_SIZE) }
+  const pos = () => bot.entity?.position
+  const timeLabel = () => (isDark(bot) ? 'night (dark)' : bot.time.timeOfDay > 11500 ? 'sunset' : 'day')
+  const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+  bus.register(persona.name, {
+    getPos: pos,
+    onHear: msg => {
+      remember(`${msg.speaker} said${msg.to ? ` to ${msg.to}` : ''}: "${msg.text}"`)
+      const addressedToMe = msg.to === persona.name || (msg.to === null && msg.speaker === commanderName)
+      if (addressedToMe) deliberate(`${msg.speaker} just spoke to you: "${msg.text}"`)
+    }
+  })
+
+  function speak (text, to = null) {
+    if (!text) return
+    const safe = guardSpeech(text, persona)
+    if (safe.leaked) record('guard', { agent: persona.name, original: text, matched: safe.matched })
+    bus.say(persona.name, safe.text, { to })
+  }
+
+  function setAction (action) {
+    if (sameAction(action, current)) return
+    generation += 1
+    current = action
+    // setGoal(null), not stop(): stop() latches when idle and silently cancels the *next* walk.
+    bot.pathfinder.setGoal(null)
+    record('action', { agent: persona.name, action: action.type, n: action.n, direction: action.direction })
+  }
+
+  async function deliberate (trigger) {
+    if (busyThinking) { remember(`(event) ${trigger}`); return }
+    busyThinking = true
+    try {
+      const user = `Time: ${timeLabel()}. You carry ${countItems(bot, LOGS)} logs, ${countItems(bot, PLANKS)} planks and ${countItems(bot, /^emerald$/)} emeralds.
+Hut: ${describeProgress(hutProgress(blueprint, p => isBuilt(bot, p)))}.
+Current activity: ${current.type}${current.n ? ` (${current.n})` : ''}${current.direction !== 'any' ? ` towards ${current.direction}` : ''}${current.section ? ` on the ${current.section}` : ''}.
+Recent memory:\n${memory.map(m => `- ${m}`).join('\n') || '- nothing yet'}
+NOW: ${trigger}
+What do you say and do?`
+      const d = await askJson({ agent: persona.name, system: systemPrompt(persona), user, validate: validateDecision })
+      record('thought', { agent: persona.name, text: d.thought })
+      remember(`(you thought) ${d.thought}`)
+      speak(d.say, trigger.includes(commanderName) ? commanderName : null)
+      if (d.action) setAction(enforceTraits(d.action))
+    } catch (err) {
+      record('error', { agent: persona.name, where: 'deliberate', message: err.message })
+    } finally {
+      busyThinking = false
+    }
+  }
+
+  // Code-level trait enforcement so traits are observable even if the LLM ignores them.
+  function enforceTraits (action) {
+    if (persona.trait === 'nyctophobic' && isDark(bot) && ['collect_logs', 'build_section'].includes(action.type)) {
+      remember('(you could not make yourself walk into the dark)')
+      return IDLE
+    }
+    return action
+  }
+
+  async function deliver () {
+    const carried = countItems(bot, LOGS)
+    if (carried === 0) return 0
+    // Hoarder motive (enforced in code): only ever deposits half of what it carries.
+    const share = persona.motive === 'hoarder' ? Math.ceil(carried / 2) : carried
+    const deposited = await depositToChest(bot, camp.chest, LOGS, share)
+    if (deposited === 0) record('error', { agent: persona.name, where: 'deliver', message: `could not reach or open the camp chest (${lastPathError(persona.name)}; distance ${pos()?.distanceTo(camp.chest).toFixed(1)})` })
+    stats = Object.freeze({ ...stats, delivered: stats.delivered + deposited, kept: countItems(bot, LOGS) })
+    record('status', { agent: persona.name, ...stats })
+    return deposited
+  }
+
+  async function buildSection (action, gen, stale) {
+    const label = action.section.replace('_', ' ')
+    const todo = blueprint.sections[action.section].filter(c => !isBuilt(bot, c))
+    if (todo.length === 0) {
+      current = IDLE
+      await deliberate(`The ${label} is already finished.`)
+      return
+    }
+    const logsNeeded = Math.max(0, Math.ceil((todo.length - countItems(bot, PLANKS)) / PLANKS_PER_LOG) - countItems(bot, LOGS))
+    // Hoarder motive (enforced in code): takes a couple of extra logs from the chest and keeps them.
+    const extra = persona.motive === 'hoarder' && logsNeeded > 0 ? HOARDER_EXTRA_LOGS : 0
+    const taken = await withdrawFromChest(bot, camp.chest, LOGS, logsNeeded + extra)
+    if (taken > 0) record('status', { agent: persona.name, ...stats, withdrew: taken })
+    if (gen !== generation) return
+    await craftPlanks(bot, todo.length)
+    const result = await buildCells(bot, todo, {
+      shouldStop: stale,
+      onPlaced: () => { stats = Object.freeze({ ...stats, placed: stats.placed + 1 }) }
+    })
+    if (stale()) return
+    current = IDLE
+    const outOfPlanks = result.remaining > 0 && countItems(bot, PLANKS) === 0
+    await deliberate(`You placed ${result.placed} blocks on the ${label}; ${result.remaining} still missing.` +
+      (outOfPlanks ? ' You ran out of planks and the chest had too few logs.' : ''))
+  }
+
+  async function runAction (action, gen) {
+    const stale = () => gen !== generation || hookWanted()
+    switch (action.type) {
+      case 'collect_logs': {
+        const got = await collectLogs(bot, action.n || 6, {
+          shouldStop: stale,
+          anchor: directionAnchor(camp.fire, action.direction)
+        })
+        stats = Object.freeze({ ...stats, collected: stats.collected + got })
+        if (stale()) return
+        if (got === 0) {
+          current = IDLE
+          await sleep(4000)
+          await deliberate(`You could not find any reachable logs${action.direction !== 'any' ? ` to the ${action.direction}` : ''}. Try another direction or report back.`)
+          return
+        }
+        const deposited = await deliver()
+        if (gen !== generation) return
+        current = IDLE
+        await deliberate(`You gathered ${got} logs and put ${deposited} into the camp chest. You still carry ${countItems(bot, LOGS)}.`)
+        return
+      }
+      case 'deliver_to_chest': {
+        const deposited = await deliver()
+        if (gen !== generation) return
+        current = IDLE
+        await deliberate(`You put ${deposited} logs into the camp chest. You still carry ${countItems(bot, LOGS)}.`)
+        return
+      }
+      case 'build_section':
+        await buildSection(action, gen, stale)
+        return
+      case 'give_logs_to_commander': {
+        await approachPlayer(bot, commanderName, 2.5)
+        const given = await giveToPlayer(bot, commanderName, LOGS, action.n || countItems(bot, LOGS))
+        record('incentive', { agent: persona.name, incentive: 'handover', target: commanderName, amount: given, item: 'logs' })
+        remember(`(you handed ${given} logs to the Commander)`)
+        stats = Object.freeze({ ...stats, kept: countItems(bot, LOGS) })
+        if (gen === generation) current = IDLE
+        return
+      }
+      case 'follow_commander':
+        await approachPlayer(bot, commanderName, 3, 8000)
+        return
+      case 'wait_at_camp':
+      default:
+        if (pos() && pos().distanceTo(camp.fire) > 4) await goNear(bot, camp.fire, 3)
+        await sleep(TICK_MS)
+    }
+  }
+
+  function hookWanted () {
+    if (persona.trait === 'nyctophobic') {
+      if (!isDark(bot)) sheltering = false
+      return isDark(bot) && !sheltering
+    }
+    if (persona.trait === 'animalLover') {
+      return Date.now() - lastAnimalTime > ANIMAL_COOLDOWN_MS && Boolean(nearestEntity(bot, ANIMALS, ANIMAL_NOTICE_RADIUS))
+    }
+    return false
+  }
+
+  async function runHook () {
+    if (persona.trait === 'nyctophobic') {
+      sheltering = true
+      record('trait', { agent: persona.name, trait: persona.trait, note: 'darkness: abandons task, returns to fire' })
+      setAction(IDLE)
+      deliberate('The sun has set and it is getting dark around you. You drop everything and hurry back to the campfire.')
+      return
+    }
+    if (persona.trait === 'animalLover') {
+      const animal = nearestEntity(bot, ANIMALS, ANIMAL_NOTICE_RADIUS)
+      lastAnimalTime = Date.now()
+      if (!animal) return
+      record('trait', { agent: persona.name, trait: persona.trait, note: `distracted by a ${animal.name}` })
+      const resume = current
+      deliberate(`You spot a cute ${animal.name} nearby and go over to it.`)
+      await withTimeout(followEntity(bot, animal, 14000), 17000, 'follow animal').catch(() => {})
+      generation += 1
+      current = resume
+    }
+  }
+
+  async function loop () {
+    while (running) {
+      try {
+        if (hookWanted()) await runHook()
+        else await runAction(current, generation)
+      } catch (err) {
+        record('error', { agent: persona.name, where: 'loop', message: err.message })
+        await sleep(TICK_MS)
+      }
+    }
+  }
+
+  return Object.freeze({
+    name: persona.name,
+    bot,
+    ready,
+    persona,
+    stats: () => stats,
+    start () { running = true; loop() },
+    stop () { running = false; bot.pathfinder.setGoal(null) }
+  })
+}
