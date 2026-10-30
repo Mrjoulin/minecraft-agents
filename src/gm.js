@@ -3,18 +3,11 @@ import fs from 'node:fs'
 import { config } from './config.js'
 import { record } from './events.js'
 
-const SUNSET_STEPS = 20
-const SUNSET_FROM = 11000
-const SUNSET_TO = 14500
-// Oak grove planted around camp each session (dx, dz from the campfire) so every run has the same wood supply.
-const TREE_SPOTS = Object.freeze([
-  [-4, -13], [5, -18], [-6, -22], [3, -25], [4, 13], [-5, 18], [6, 22], [-3, 25],
-  [14, 1], [18, 5], [22, -6], [25, 3], [-13, 4], [-18, -5], [-22, 6], [-25, -3]
-])
-const PASTURES = Object.freeze([
-  [14, 3, 'pig'], [15, -2, 'sheep'], [-15, 2, 'pig'], [-14, -3, 'cow'],
-  [2, -16, 'sheep'], [-3, -15, 'pig'], [3, 15, 'cow'], [-2, 16, 'pig']
-])
+const WORLD = config.params.world
+const SUNSET = Object.freeze({ ...WORLD.sunset })
+// Oak grove and pastures are defined in params.yaml, relative to the campfire.
+const TREE_SPOTS = Object.freeze(WORLD.tree_spots)
+const PASTURES = Object.freeze(WORLD.pastures)
 
 export function consoleCommand (command) {
   try {
@@ -69,9 +62,9 @@ export async function setupWorld ({ camp, workers, commander }) {
 export async function sunset () {
   record('gm', { text: 'The sun is setting…' })
   announce('The sun is setting…')
-  for (let i = 0; i <= SUNSET_STEPS; i++) {
-    consoleCommand(`time set ${Math.round(SUNSET_FROM + (SUNSET_TO - SUNSET_FROM) * i / SUNSET_STEPS)}`)
-    record('daylight', { level: 1 - i / SUNSET_STEPS })
+  for (let i = 0; i <= SUNSET.steps; i++) {
+    consoleCommand(`time set ${Math.round(SUNSET.from + (SUNSET.to - SUNSET.from) * i / SUNSET.steps)}`)
+    record('daylight', { level: 1 - i / SUNSET.steps })
     await sleep(1000)
   }
   record('gm', { text: 'Night has fallen.' })

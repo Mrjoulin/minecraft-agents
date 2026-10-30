@@ -1,6 +1,7 @@
 // Sub-agent: a Mineflayer body + an LLM mind with a hidden persona.
 import { askJson } from '../llm.js'
 import { record } from '../events.js'
+import { config } from '../config.js'
 import { guardSpeech } from '../guard.js'
 import {
   createBody, collectLogs, depositToChest, goNear, approachPlayer, giveToPlayer,
@@ -12,10 +13,10 @@ import { SECTIONS, PLANKS_PER_LOG, hutProgress, describeProgress } from '../blue
 const ACTIONS = Object.freeze(['collect_logs', 'deliver_to_chest', 'build_section', 'wait_at_camp', 'give_logs_to_commander', 'follow_commander'])
 const HOARDER_EXTRA_LOGS = 2
 const ANIMALS = Object.freeze(['pig', 'cow', 'sheep', 'chicken'])
-const ANIMAL_COOLDOWN_MS = 45000
-const ANIMAL_NOTICE_RADIUS = 16
-const MEMORY_SIZE = 14
-const TICK_MS = 1000
+const ANIMAL_COOLDOWN_MS = config.params.session.animal_cooldown_ms
+const ANIMAL_NOTICE_RADIUS = config.params.session.animal_notice_radius
+const MEMORY_SIZE = config.params.session.memory_size
+const TICK_MS = config.params.session.worker_tick_ms
 const LOGS = /_log$/
 const IDLE = Object.freeze({ type: 'wait_at_camp', n: 0, direction: 'any', section: null })
 
