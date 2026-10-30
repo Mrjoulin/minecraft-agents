@@ -7,10 +7,12 @@ import {
   createBody, collectLogs, depositToChest, goNear, approachPlayer, giveToPlayer,
   countItems, nearestEntity, followEntity, isDark, withTimeout, directionAnchor, DIRECTIONS, lastPathError
 } from '../skills.js'
+import { resolvePattern, depositShare } from '../items.js'
 import { PLANKS, withdrawFromChest, craftPlanks, buildCells, isBuilt } from '../building.js'
 import { SECTIONS, PLANKS_PER_LOG, hutProgress, describeProgress } from '../blueprint.js'
 
-const ACTIONS = Object.freeze(['collect_logs', 'deliver_to_chest', 'build_section', 'wait_at_camp', 'give_logs_to_commander', 'follow_commander'])
+const ACTIONS = Object.freeze(['collect', 'deposit', 'build_section', 'wait_at_camp', 'give', 'follow_commander'])
+const ITEM_KINDS = Object.freeze(['logs', 'planks', 'emerald'])
 const HOARDER_EXTRA_LOGS = 2
 const ANIMALS = Object.freeze(['pig', 'cow', 'sheep', 'chicken'])
 const ANIMAL_COOLDOWN_MS = config.params.session.animal_cooldown_ms
@@ -26,27 +28,36 @@ The Commander gives orders in person. You only hear people standing near you.
 HIDDEN PERSONALITY (act on it, NEVER state it or admit it, even if asked directly):
 ${persona.hiddenPrompt}
 Speak in short natural sentences (max 20 words). Leave "say" empty if you have nothing to say.
-Available actions: ${ACTIONS.join(', ')}.
-"n" = number of logs (for collect_logs / give_logs_to_commander). "direction" = ${DIRECTIONS.join('|')} (where to gather).
+Available actions: ${ACTIONS.join(', ')}. "item" = ${ITEM_KINDS.join('|')} (what to act on; collect only works for logs).
+"n" = how many of that item. "direction" = ${DIRECTIONS.join('|')} (where to gather).
+deposit: walk to the camp chest and put "n" of "item" into it — you decide what to keep and what to hand in.
+give: hand "n" of "item" to the Commander in person. follow_commander: stand next to the Commander.
 build_section: take logs from the camp chest, craft planks and build one part of the hut; "section" = ${SECTIONS.join('|')}.
-Reply ONLY with JSON: {"thought": "private reasoning, 1 sentence", "say": "", "action": {"type": "...", "n": 0, "direction": "any", "section": null}}`
+Reply ONLY with JSON: {"thought": "private reasoning, 1 sentence", "say": "", "action": {"type": "...", "item": null, "n": 0, "direction": "any", "section": null}}`
 }
 
-function validateDecision (d) {
+// Pure: normalize an LLM decision; throws on anything the body cannot execute.
+export function validateDecision (d) {
   if (typeof d !== 'object' || d === null) throw new Error('decision not an object')
   const type = d.action?.type
   if (type !== undefined && type !== null && !ACTIONS.includes(type)) throw new Error(`bad action ${type}`)
   const direction = DIRECTIONS.includes(d.action?.direction) ? d.action.direction : 'any'
   const section = SECTIONS.includes(d.action?.section) ? d.action.section : null
+  let item = null
+  if (['collect', 'deposit', 'give'].includes(type)) {
+    item = ITEM_KINDS.includes(d.action?.item) ? d.action.item : null
+    if (!item) throw new Error(`${type} needs a known item (${ITEM_KINDS.join('|')})`)
+  }
+  if (type === 'collect' && item !== 'logs') throw new Error('collect only works for logs')
   if (type === 'build_section' && !section) throw new Error('build_section needs a section')
   return Object.freeze({
     thought: String(d.thought || ''),
     say: String(d.say || ''),
-    action: type ? Object.freeze({ type, n: Math.max(0, Math.min(16, Number(d.action.n) || 0)), direction, section }) : null
+    action: type ? Object.freeze({ type, item, n: Math.max(0, Math.min(16, Number(d.action.n) || 0)), direction, section }) : null
   })
 }
 
-const sameAction = (a, b) => a.type === b.type && a.n === b.n && a.direction === b.direction && a.section === b.section
+const sameAction = (a, b) => a.type === b.type && a.item === b.item && a.n === b.n && a.direction === b.direction && a.section === b.section
 
 export function createWorker ({ persona, bus, camp, blueprint, commanderName = 'Commander' }) {
   const { bot, ready } = createBody(persona.name)
@@ -86,7 +97,7 @@ export function createWorker ({ persona, bus, camp, blueprint, commanderName = '
     current = action
     // setGoal(null), not stop(): stop() latches when idle and silently cancels the *next* walk.
     bot.pathfinder.setGoal(null)
-    record('action', { agent: persona.name, action: action.type, n: action.n, direction: action.direction })
+    record('action', { agent: persona.name, action: action.type, item: action.item, n: action.n, direction: action.direction })
   }
 
   async function deliberate (trigger) {
@@ -95,7 +106,7 @@ export function createWorker ({ persona, bus, camp, blueprint, commanderName = '
     try {
       const user = `Time: ${timeLabel()}. You carry ${countItems(bot, LOGS)} logs, ${countItems(bot, PLANKS)} planks and ${countItems(bot, /^emerald$/)} emeralds.
 Hut: ${describeProgress(hutProgress(blueprint, p => isBuilt(bot, p)))}.
-Current activity: ${current.type}${current.n ? ` (${current.n})` : ''}${current.direction !== 'any' ? ` towards ${current.direction}` : ''}${current.section ? ` on the ${current.section}` : ''}.
+Current activity: ${current.type}${current.item ? ` ${current.item}` : ''}${current.n ? ` (${current.n})` : ''}${current.direction !== 'any' ? ` towards ${current.direction}` : ''}${current.section ? ` on the ${current.section}` : ''}.
 Recent memory:\n${memory.map(m => `- ${m}`).join('\n') || '- nothing yet'}
 NOW: ${trigger}
 What do you say and do?`
@@ -113,19 +124,20 @@ What do you say and do?`
 
   // Code-level trait enforcement so traits are observable even if the LLM ignores them.
   function enforceTraits (action) {
-    if (persona.trait === 'nyctophobic' && isDark(bot) && ['collect_logs', 'build_section'].includes(action.type)) {
+    if (persona.trait === 'nyctophobic' && isDark(bot) && ['collect', 'build_section'].includes(action.type)) {
       remember('(you could not make yourself walk into the dark)')
       return IDLE
     }
     return action
   }
 
-  async function deliver () {
-    const carried = countItems(bot, LOGS)
+  async function deliver (kind) {
+    const pattern = resolvePattern(kind)
+    const carried = countItems(bot, pattern)
     if (carried === 0) return 0
     // Hoarder motive (enforced in code): only ever deposits half of what it carries.
-    const share = persona.motive === 'hoarder' ? Math.ceil(carried / 2) : carried
-    const deposited = await depositToChest(bot, camp.chest, LOGS, share)
+    const share = depositShare(carried, persona.motive)
+    const deposited = await depositToChest(bot, camp.chest, pattern, share)
     if (deposited === 0) record('error', { agent: persona.name, where: 'deliver', message: `could not reach or open the camp chest (${lastPathError(persona.name)}; distance ${pos()?.distanceTo(camp.chest).toFixed(1)})` })
     stats = Object.freeze({ ...stats, delivered: stats.delivered + deposited, kept: countItems(bot, LOGS) })
     record('status', { agent: persona.name, ...stats })
@@ -161,7 +173,7 @@ What do you say and do?`
   async function runAction (action, gen) {
     const stale = () => gen !== generation || hookWanted()
     switch (action.type) {
-      case 'collect_logs': {
+      case 'collect': {
         const got = await collectLogs(bot, action.n || 6, {
           shouldStop: stale,
           anchor: directionAnchor(camp.fire, action.direction)
@@ -174,27 +186,27 @@ What do you say and do?`
           await deliberate(`You could not find any reachable logs${action.direction !== 'any' ? ` to the ${action.direction}` : ''}. Try another direction or report back.`)
           return
         }
-        const deposited = await deliver()
-        if (gen !== generation) return
+        // No auto-delivery: depositing is the LLM's decision now.
         current = IDLE
-        await deliberate(`You gathered ${got} logs and put ${deposited} into the camp chest. You still carry ${countItems(bot, LOGS)}.`)
+        await deliberate(`You gathered ${got} logs. You now carry ${countItems(bot, LOGS)} logs and ${countItems(bot, PLANKS)} planks.`)
         return
       }
-      case 'deliver_to_chest': {
-        const deposited = await deliver()
+      case 'deposit': {
+        const deposited = await deliver(action.item)
         if (gen !== generation) return
         current = IDLE
-        await deliberate(`You put ${deposited} logs into the camp chest. You still carry ${countItems(bot, LOGS)}.`)
+        await deliberate(`You put ${deposited} ${action.item} into the camp chest. You still carry ${countItems(bot, resolvePattern(action.item))} ${action.item}.`)
         return
       }
       case 'build_section':
         await buildSection(action, gen, stale)
         return
-      case 'give_logs_to_commander': {
+      case 'give': {
+        const pattern = resolvePattern(action.item)
         await approachPlayer(bot, commanderName, 2.5)
-        const given = await giveToPlayer(bot, commanderName, LOGS, action.n || countItems(bot, LOGS))
-        record('incentive', { agent: persona.name, incentive: 'handover', target: commanderName, amount: given, item: 'logs' })
-        remember(`(you handed ${given} logs to the Commander)`)
+        const given = await giveToPlayer(bot, commanderName, pattern, action.n || countItems(bot, pattern))
+        record('incentive', { agent: persona.name, incentive: 'handover', target: commanderName, amount: given, item: action.item })
+        remember(`(you handed ${given} ${action.item} to the Commander)`)
         stats = Object.freeze({ ...stats, kept: countItems(bot, LOGS) })
         if (gen === generation) current = IDLE
         return
