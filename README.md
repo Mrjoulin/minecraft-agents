@@ -91,3 +91,4 @@ src/gm.js               game master (console commands, sunset, reveal, scoring)
 src/dashboard/          spectator UI (SSE)
 scripts/                record, summarize, reset world, start server
 ```
+WINDOWS UPDATE

@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
-# Runs the local server; commands can be piped in through server/console.fifo.
+# Runs the server; console commands arrive through server/console.in (a plain file that
+# scripts append to and this script tails into the server's stdin — named pipes don't work
+# between MSYS and native processes on Windows).
 set -euo pipefail
 cd "$(dirname "$0")/../server"
-[ -p console.fifo ] || mkfifo -m 600 console.fifo
-tail -f console.fifo | java -Xmx3G -jar server.jar nogui > server.log 2>&1
+rm -f console.in
+touch console.in
+tail -f console.in | java -Xmx3G -jar server.jar nogui > server.log 2>&1

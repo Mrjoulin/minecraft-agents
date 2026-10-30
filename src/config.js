@@ -16,7 +16,8 @@ export const config = Object.freeze({
     host: process.env.MC_HOST || '127.0.0.1',
     port: Number(process.env.MC_PORT || 25565),
     version: process.env.MC_VERSION || '1.21.4',
-    consoleFifo: process.env.MC_CONSOLE_FIFO || path.join(ROOT, 'server', 'console.fifo')
+    // Windows has no usable named pipes from MSYS, so console commands go through a plain appended file.
+    consoleFifo: process.env.MC_CONSOLE_FIFO || path.join(ROOT, 'server', 'console.in')
   }),
   llm: Object.freeze({
     baseUrl: process.env.LLM_BASE_URL || 'https://opencode.ai/inference/go/openai/v1',
