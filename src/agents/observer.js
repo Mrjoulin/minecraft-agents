@@ -8,11 +8,11 @@ import { hutProgress, describeProgress, SECTIONS } from '../blueprint.js'
 
 const NATURAL_LOG = /_log$/
 const ANIMALS = new Set(['pig', 'cow', 'sheep', 'chicken'])
-const SAMPLE_MS = 1000
-const AUDIT_EVERY_MS = 8000
+const SAMPLE_MS = config.params.observer.sample_ms
+const AUDIT_EVERY_MS = config.params.observer.audit_every_ms
 const MAX_EVIDENCE = 60
-const CHOP_NOTE_EVERY = 3
-const PLACE_NOTE_EVERY = 5
+const CHOP_NOTE_EVERY = config.params.observer.chop_note_every
+const PLACE_NOTE_EVERY = config.params.observer.place_note_every
 
 export function describeActivity ({ nearFire, nearAnimal, nearChest, moving }) {
   if (nearAnimal) return `standing next to a ${nearAnimal}`

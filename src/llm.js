@@ -1,8 +1,11 @@
 // Minimal OpenAI-compatible chat client with JSON-object responses.
+// LLM_STUB=1 swaps the network client for the algorithmic driver (src/stub-llm.js):
+// same prompts, same validators, no API key needed.
 import { config } from './config.js'
 import { record } from './events.js'
 
 const MAX_ATTEMPTS = 3
+const STUB = process.env.LLM_STUB === '1'
 
 /** Extract the first JSON object from a model reply (tolerates code fences / prose). */
 export function parseJsonReply (text) {
@@ -49,7 +52,12 @@ async function postChat (messages, { sessionId, temperature, maxTokens }) {
 /**
  * Ask the model for a JSON object. `validate` throws if the shape is wrong, triggering a retry.
  */
-export async function askJson ({ agent, system, user, validate = x => x, temperature = 0.7, maxTokens = 1200 }) {
+export async function askJson (opts) {
+  if (STUB) return (await import('./stub-llm.js')).askJson(opts)
+  return realAskJson(opts)
+}
+
+async function realAskJson ({ agent, system, user, validate = x => x, temperature = 0.7, maxTokens = 1200 }) {
   const messages = [
     { role: 'system', content: system },
     { role: 'user', content: user }

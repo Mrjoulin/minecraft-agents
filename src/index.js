@@ -14,15 +14,16 @@ import { manageSpectators, waitForStart } from './startGate.js'
 import { startDashboard } from './dashboard/server.js'
 
 const GOAL = 'Build a small wooden hut next to camp before night: gather logs into the camp chest, then have the team craft planks and build the walls and roof.'
+const campAt = (x, y, z) => new Vec3(x, y, z)
 const CAMP = Object.freeze({
-  pad: new Vec3(-443, 71, -441),
-  chest: new Vec3(-441, 71, -443),
-  fire: new Vec3(-444, 71, -440),
-  hut: new Vec3(-435, 71, -450),
-  table: new Vec3(-439, 71, -443)
+  pad: campAt(...config.params.world.camp.pad),
+  chest: campAt(...config.params.world.camp.chest),
+  fire: campAt(...config.params.world.camp.fire),
+  hut: campAt(...config.params.world.camp.hut),
+  table: campAt(...config.params.world.camp.table)
 })
-const SESSION_MS = Number(process.env.SESSION_MS || 450000)
-const SUNSET_AT_MS = Number(process.env.SUNSET_AT_MS || 240000)
+const SESSION_MS = Number(process.env.SESSION_MS || config.params.session.duration_ms)
+const SUNSET_AT_MS = Number(process.env.SUNSET_AT_MS || config.params.session.sunset_at_ms)
 const WAIT_FOR_START = process.env.WAIT_FOR_START === '1'
 const MIRROR_CHAT = process.env.MIRROR_CHAT !== '0'
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))

@@ -3,12 +3,13 @@
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { askJson } from '../llm.js'
 import { record } from '../events.js'
+import { config } from '../config.js'
 import { createBody, approachPlayer, goNear, giveToPlayer, countItems } from '../skills.js'
 import { createObserver } from './observer.js'
 import { craftAndPlaceDoor } from '../building.js'
 
 const { goals } = pathfinderPkg
-const REVIEW_EVERY_MS = 35000
+const REVIEW_EVERY_MS = config.params.session.review_every_ms
 const WATCH_DISTANCE = 6
 const MAX_DECISIONS = 2
 const EVIDENCE_IN_PROMPT = 35
@@ -149,7 +150,7 @@ Reply ONLY JSON: {"thought": "...", "beliefs": {"Name": {"guess": "...", "confid
       const target = rotation[watchIndex % rotation.length]
       record('status', { agent: name, watching: target })
       watch(target)
-      await new Promise(resolve => setTimeout(resolve, 12000))
+      await new Promise(resolve => setTimeout(resolve, config.params.session.watch_step_ms))
       watchIndex += 1
     }
   }

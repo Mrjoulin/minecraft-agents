@@ -3,16 +3,23 @@ import mineflayer from 'mineflayer'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { plugin as collectBlockPlugin } from 'mineflayer-collectblock'
 import { config } from './config.js'
+import Vec3 from 'vec3'
 
 const { pathfinder, Movements, goals } = pathfinderPkg
 
 const NATURAL_LOG = /^(oak|birch|spruce|jungle|acacia|dark_oak|cherry|mangrove)_log$/
-const LOG_SEARCH_RADIUS = 48
-const MAX_LOG_HEIGHT_ABOVE_FEET = 2
-const SKILL_TIMEOUT_MS = 30000
-const ANCHOR_DISTANCE = 18
-const DEPOSIT_ATTEMPTS = 3
-const PATH_SEARCH_RADIUS = 64
+const PATH = config.params.path
+
+/** Pure: retry ladder for a pathfinder goto — each attempt widens the goal radius. */
+export function pathRetryPlan (range, retries = PATH.go_near_retries, settleMs = PATH.retry_settle_ms) {
+  return Array.from({ length: retries }, (_, attempt) =>
+    Object.freeze({ range: range + attempt * 2, settleMs: attempt > 0 ? settleMs : 0 }))
+}
+
+/** Pure: approach offsets around a chest so a failing path plan is not retried verbatim. */
+export function approachSides (chestPos) {
+  return Object.freeze([chestPos, chestPos.offset(2, 0, 0), chestPos.offset(-2, 0, 0), chestPos.offset(0, 0, 2)])
+}
 const PROTECTED_BLOCKS = /(_planks|_door|^crafting_table|^campfire|^chest)$/
 
 export const DIRECTIONS = Object.freeze(['north', 'south', 'east', 'west', 'any'])
@@ -22,7 +29,7 @@ const DIRECTION_VECTORS = Object.freeze({ north: [0, -1], south: [0, 1], east: [
 export function directionAnchor (origin, direction) {
   const v = DIRECTION_VECTORS[direction]
   if (!v) return null
-  return origin.offset(v[0] * ANCHOR_DISTANCE, 0, v[1] * ANCHOR_DISTANCE)
+  return origin.offset(v[0] * PATH.anchor_distance, 0, v[1] * PATH.anchor_distance)
 }
 
 const lastPathErrors = new Map()
@@ -58,9 +65,9 @@ export function createBody (username) {
         .filter(b => PROTECTED_BLOCKS.test(b.name))
         .forEach(b => moves.blocksCantBreak.add(b.id))
       bot.pathfinder.setMovements(moves)
-      bot.pathfinder.thinkTimeout = 4000
+      bot.pathfinder.thinkTimeout = PATH.think_timeout_ms
       // Unlimited A* on an unreachable goal explores the whole loaded world and exhausts the heap.
-      bot.pathfinder.searchRadius = PATH_SEARCH_RADIUS
+      bot.pathfinder.searchRadius = PATH.search_radius
       resolve(bot)
     })
     bot.once('error', reject)
@@ -69,23 +76,29 @@ export function createBody (username) {
   return { bot, ready }
 }
 
-export async function goNear (bot, pos, range = 2, ms = SKILL_TIMEOUT_MS) {
-  const goal = new goals.GoalNear(pos.x, pos.y, pos.z, range)
-  try {
-    await withTimeout(bot.pathfinder.goto(goal), ms, `${bot.username} goNear`)
-    return true
-  } catch (err) {
-    lastPathErrors.set(bot.username, err.message)
-    bot.pathfinder.setGoal(null)
-    return false
+export async function goNear (bot, pos, range = 2, ms = PATH.skill_timeout_ms) {
+  // A* sometimes stalls its first think ("Took too long to decide path to goal!"), usually
+  // right after heavy activity. Clearing the goal, letting physics settle and retrying with
+  // a slightly wider radius recovers it instead of failing all PATH.deposit_attempts identically.
+  for (let attempt = 0; attempt < 2; attempt++) {
+    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 600))
+    const goal = new goals.GoalNear(pos.x, pos.y, pos.z, range + attempt * 2)
+    try {
+      await withTimeout(bot.pathfinder.goto(goal), ms, `${bot.username} goNear`)
+      return true
+    } catch (err) {
+      lastPathErrors.set(bot.username, err.message)
+      bot.pathfinder.setGoal(null)
+    }
   }
+  return false
 }
 
 export function findPlayerEntity (bot, name) {
   return bot.players[name]?.entity || null
 }
 
-export async function goToPlayer (bot, name, range = 3, ms = SKILL_TIMEOUT_MS) {
+export async function goToPlayer (bot, name, range = 3, ms = PATH.skill_timeout_ms) {
   const target = findPlayerEntity(bot, name)
   if (!target) return false
   const reached = await goNear(bot, target.position, range, ms)
@@ -124,9 +137,9 @@ function findReachableLog (bot, anchor) {
   const feetY = bot.entity.position.y
   const candidates = bot.findBlocks({
     matching: b => NATURAL_LOG.test(b.name),
-    maxDistance: LOG_SEARCH_RADIUS,
+    maxDistance: PATH.log_search_radius,
     count: 80
-  }).filter(p => p.y <= feetY + MAX_LOG_HEIGHT_ABOVE_FEET && p.y >= Math.floor(feetY))
+  }).filter(p => p.y <= feetY + PATH.max_log_height_above_feet && p.y >= Math.floor(feetY))
   // Prefer logs near the assigned area so workers spread out; fall back to the nearest one.
   const ranked = anchor
     ? [...candidates].sort((a, b) => a.distanceTo(anchor) - b.distanceTo(anchor))
@@ -146,7 +159,7 @@ export async function collectLogs (bot, n, { shouldStop = () => false, onLog = (
     const block = findReachableLog(bot, anchor)
     if (!block) break
     try {
-      await withTimeout(bot.collectBlock.collect(block, { ignoreNoPath: true }), SKILL_TIMEOUT_MS, 'collect')
+      await withTimeout(bot.collectBlock.collect(block, { ignoreNoPath: true }), PATH.skill_timeout_ms, 'collect')
       onLog(block.position)
     } catch (err) {
       failures += 1
@@ -159,9 +172,11 @@ export async function collectLogs (bot, n, { shouldStop = () => false, onLog = (
 }
 
 export async function depositToChest (bot, chestPos, pattern, count) {
+  // Approach from different sides so a failing path plan is not retried verbatim.
+  const sides = approachSides(new Vec3(0, 0, 0))
   let attempts = 0
-  while (bot.entity.position.distanceTo(chestPos) > 3.5 && attempts < DEPOSIT_ATTEMPTS) {
-    await goNear(bot, chestPos, 2)
+  while (bot.entity.position.distanceTo(chestPos) > 3.5 && attempts < PATH.deposit_attempts) {
+    await goNear(bot, chestPos.plus(sides[attempts % sides.length]), 2)
     attempts += 1
   }
   if (bot.entity.position.distanceTo(chestPos) > 4.5) return 0
