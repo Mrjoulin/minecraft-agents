@@ -49,9 +49,13 @@ async function main () {
 
   await setupWorld({ camp: CAMP, workers: workers.map(w => w.name), commander: 'Commander' })
   await sleep(2500)
-  attachViewer(commander.bot, { port: config.viewerPort, firstPerson: false, viewDistance: 5 })
-  await sleep(1500)
-  record('viewer', { port: config.viewerPort })
+  // VIEWER=0 skips the spectator web renderer (memory-hungry on butchered worlds; also
+  // handy for headless runs).
+  if (process.env.VIEWER !== '0') {
+    attachViewer(commander.bot, { port: config.viewerPort, firstPerson: false, viewDistance: 5 })
+    await sleep(1500)
+    record('viewer', { port: config.viewerPort })
+  }
   const botNames = [...workers.map(w => w.name), 'Commander']
   manageSpectators(commander.bot, botNames)
   if (WAIT_FOR_START) await waitForStart(commander.bot, botNames)

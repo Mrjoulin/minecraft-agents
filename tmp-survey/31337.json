@@ -1,0 +1,29 @@
+{
+  "seed_area": {
+    "x": 5,
+    "z": -7
+  },
+  "surface": {
+    "y": 108,
+    "name": "snow_block"
+  },
+  "biome": "",
+  "height": {
+    "min": 100,
+    "max": 112,
+    "spread": 12,
+    "avg": 110.4,
+    "sd": 2.54
+  },
+  "water_samples": "0/176",
+  "sand_samples": 0,
+  "trees_within_radius": 500,
+  "flattest_40x40": {
+    "at": {
+      "x": -43,
+      "y": 111,
+      "z": -15
+    },
+    "spread": 4
+  }
+}

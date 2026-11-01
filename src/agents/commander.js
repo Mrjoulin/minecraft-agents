@@ -105,6 +105,20 @@ Reply ONLY JSON: {"thought": "...", "assignments": [{"agent": "Name", "say": "wh
     for (const a of d.assignments.filter(x => team.includes(x.agent))) await orderInPerson(a.agent, a.say)
   }
 
+  /** A flaky network must not kill the session: retry the first plan, then continue anyway. */
+  async function planWithRetries () {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await plan()
+        return
+      } catch (err) {
+        record('error', { agent: name, where: 'plan', attempt, message: err.message })
+        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 10000))
+      }
+    }
+    record('gm', { text: 'The Commander could not reach its mind (LLM is unreachable); continuing without the first plan.' })
+  }
+
   async function review (final = false) {
     const user = `Logs in the camp chest (last audit): ${observer.chestCount()}. Emeralds left: ${countItems(bot, /^emerald$/)}.
 Tally of what you have seen:\n${observer.summary()}\nYour observations:\n${observer.evidence().slice(-EVIDENCE_IN_PROMPT).join('\n') || '(none yet)'}
@@ -176,7 +190,7 @@ Reply ONLY JSON: {"thought": "...", "beliefs": {"Name": {"guess": "...", "confid
       // The session clock starts here, so a start gate can hold the run as long as needed.
       observer = createObserver({ bot, workerNames: team, camp, blueprint, startedAt: Date.now() })
       observer.start()
-      await plan()
+      await planWithRetries()
       await loop(durationMs)
       bot.pathfinder.setGoal(null)
       if (observer.hutDone()) await hangDoor()

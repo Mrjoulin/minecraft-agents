@@ -19,20 +19,38 @@ export function consoleCommand (command, fifoPath = config.mc.consoleFifo) {
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-export async function setupWorld ({ camp, workers, commander }) {
+// Pure: the full server-console command list for a fresh session. Drops and pastures
+// from previous sessions are culled, each grove plot is cleared high and levelled, and
+// the tree is planted at an explicit height — re-running the demo on a used world can
+// neither stack new trees on old stumps nor plant them out of the bots' reach.
+export function setupCommands ({ camp, workers, commander }) {
   const c = camp
-  const commands = [
+  return [
     'gamerule doDaylightCycle false',
     'gamerule doMobSpawning false',
     'gamerule sendCommandFeedback false',
     'gamerule announceAdvancements false',
     'weather clear',
     'time set 1000',
+    // Animals first: their loot then gets swept by the item pass below.
+    'kill @e[type=pig]',
+    'kill @e[type=cow]',
+    'kill @e[type=sheep]',
+    'kill @e[type=chicken]',
+    'kill @e[type=item]',
     // Flat 11x11 camp pad so chest and campfire stand on solid ground.
     `fill ${c.pad.x - 5} ${c.pad.y - 2} ${c.pad.z - 5} ${c.pad.x + 5} ${c.pad.y - 1} ${c.pad.z + 5} grass_block`,
     `fill ${c.pad.x - 5} ${c.pad.y} ${c.pad.z - 5} ${c.pad.x + 5} ${c.pad.y + 3} ${c.pad.z + 5} air`,
-    ...TREE_SPOTS.map(([dx, dz]) =>
-      `execute positioned ${c.fire.x + dx} 0 ${c.fire.z + dz} positioned over motion_blocking_no_leaves run place feature minecraft:oak`),
+    ...TREE_SPOTS.flatMap(([dx, dz]) => {
+      const x = c.fire.x + dx
+      const z = c.fire.z + dz
+      return [
+        `fill ${x - 2} ${c.fire.y} ${z - 2} ${x + 2} 120 ${z + 2} air`,
+        `fill ${x - 2} ${c.fire.y - 1} ${z - 2} ${x + 2} ${c.fire.y - 1} ${z + 2} grass_block`,
+        // Explicit height: "positioned over" once planted trees on top of leftovers.
+        `execute positioned ${x} ${c.fire.y} ${z} run place feature minecraft:oak`
+      ]
+    }),
     // Flat, empty 9x9 building plot for the hut (after the trees, so no leaves hang into it).
     `fill ${c.hut.x - 4} ${c.hut.y - 2} ${c.hut.z - 4} ${c.hut.x + 4} ${c.hut.y - 1} ${c.hut.z + 4} grass_block`,
     `fill ${c.hut.x - 4} ${c.hut.y} ${c.hut.z - 4} ${c.hut.x + 4} ${c.hut.y + 6} ${c.hut.z + 4} air`,
@@ -51,7 +69,10 @@ export async function setupWorld ({ camp, workers, commander }) {
     // Grazing animals scattered around the tree areas.
     ...PASTURES.map(([dx, dz, kind]) => `summon ${kind} ${c.fire.x + dx} ${c.fire.y + 6} ${c.fire.z + dz}`)
   ]
-  for (const cmd of commands) {
+}
+
+export async function setupWorld ({ camp, workers, commander }) {
+  for (const cmd of setupCommands({ camp, workers, commander })) {
     consoleCommand(cmd)
     await sleep(150)
   }

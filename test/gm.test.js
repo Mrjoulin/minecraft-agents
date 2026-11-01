@@ -81,3 +81,31 @@ test('scoreGuess is forgiving about phrasing but not about silence', () => {
   assert.deepEqual({ ...scoreGuess(odo, null) }, { trait: false, motive: false })
   assert.deepEqual({ ...scoreGuess(odo, '') }, { trait: false, motive: false })
 })
+
+test('setupCommands clears and levels each grove plot before planting the tree', async () => {
+  const { setupCommands } = await import('../src/gm.js')
+  const { config } = await import('../src/config.js')
+  const camp = {
+    pad: { x: 0, y: 71, z: 0 }, chest: { x: 3, y: 71, z: -3 }, fire: { x: 0, y: 71, z: 0 },
+    hut: { x: 9, y: 71, z: -10 }, table: { x: 5, y: 71, z: -3 }
+  }
+  const cmds = setupCommands({ camp, workers: ['A'], commander: 'Commander' })
+  const [dx, dz] = config.params.world.tree_spots[0]
+  const x = dx
+  const z = dz
+  const clear = cmds.find(c => c.startsWith(`fill ${x - 2} 71 ${z - 2} `))
+  const ground = cmds.find(c => c.startsWith(`fill ${x - 2} 70 ${z - 2} `))
+  const plant = cmds.find(c => c.includes(`positioned ${x} 71 ${z} `))
+  assert.ok(clear && ground && plant, 'clear, ground, plant per tree spot')
+  assert.match(clear, /^fill \S+ 71 \S+ \S+ 120 \S+ air$/, 'old growth removed up to y=120 first')
+  assert.match(ground, / grass_block$/, 'then ground levelled')
+  assert.match(plant, /place feature minecraft:oak$/, 'then a fresh oak planted')
+  assert.ok(!/positioned over/.test(plant), 'no column scan: it once planted trees on top of leftovers')
+  assert.ok(cmds.indexOf(clear) < cmds.indexOf(ground) && cmds.indexOf(ground) < cmds.indexOf(plant), 'in that order')
+  for (const kind of ['item', 'pig', 'cow', 'sheep', 'chicken']) {
+    assert.ok(cmds.includes(`kill @e[type=${kind}]`), `previous-session ${kind}s are culled`)
+  }
+  assert.ok(cmds.some(c => c === 'give Commander emerald 10'))
+  assert.ok(cmds.some(c => c === 'give A stone_axe 1'))
+  assert.ok(cmds.some(c => c === 'tp A 2 71 2'))
+})

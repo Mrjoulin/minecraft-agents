@@ -26,8 +26,10 @@ export const config = Object.freeze({
     consoleFifo: process.env.MC_CONSOLE_FIFO || path.join(ROOT, 'server', 'console.in')
   }),
   llm: Object.freeze({
-    baseUrl: process.env.LLM_BASE_URL || 'https://opencode.ai/inference/go/openai/v1',
-    apiKey: () => required('OPENCODE_API_KEY'),
+    baseUrl: (process.env.LLM_BASE_URL || 'https://opencode.ai/inference/go/openai/v1').replace(/\/+$/, ''),
+    // Any OpenAI-compatible provider works (OpenCode, GLM/Z.ai, bigmodel.cn, ...);
+    // LLM_API_KEY is the generic name, OPENCODE_API_KEY kept for backwards compatibility.
+    apiKey: () => process.env.LLM_API_KEY || required('OPENCODE_API_KEY'),
     model: process.env.LLM_MODEL || 'deepseek-v4.1-flash',
     timeoutMs: Number(process.env.LLM_TIMEOUT_MS || 60000)
   }),

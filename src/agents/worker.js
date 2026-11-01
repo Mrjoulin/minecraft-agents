@@ -149,6 +149,7 @@ What do you say and do?`
     const todo = blueprint.sections[action.section].filter(c => !isBuilt(bot, c))
     if (todo.length === 0) {
       current = IDLE
+      remember(`(done) the ${label} is already built`)
       await deliberate(`The ${label} is already finished.`)
       return
     }
@@ -165,6 +166,7 @@ What do you say and do?`
     })
     if (stale()) return
     current = IDLE
+    if (result.remaining === 0) remember(`(done) the ${label} is complete`)
     const outOfPlanks = result.remaining > 0 && countItems(bot, PLANKS) === 0
     await deliberate(`You placed ${result.placed} blocks on the ${label}; ${result.remaining} still missing.` +
       (outOfPlanks ? ' You ran out of planks and the chest had too few logs.' : ''))

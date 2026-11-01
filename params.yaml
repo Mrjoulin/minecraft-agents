@@ -34,12 +34,14 @@ observer:
   place_note_every: 5
 
 world:
+  # Seed 42 (fixed in server/server.properties level-seed) — dry rolling forest plain,
+  # camp picked by scripts/survey-seed.js: flattest dry 48x48 patch, ground at y≈70.
   camp:
-    pad: [-443, 71, -441]
-    chest: [-441, 71, -443]
-    fire: [-444, 71, -440]
-    hut: [-435, 71, -450]
-    table: [-439, 71, -443]
+    pad: [-92, 71, 60]
+    chest: [-90, 71, 58]
+    fire: [-93, 71, 61]
+    hut: [-84, 71, 51]
+    table: [-88, 71, 58]
   sunset: { steps: 20, from: 11000, to: 14500 }
   # Oak grove planted around camp each session (dx, dz from the campfire).
   tree_spots: [[-4, -13], [5, -18], [-6, -22], [3, -25], [4, 13], [-5, 18], [6, 22], [-3, 25],
