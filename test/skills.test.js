@@ -136,6 +136,40 @@ test('approachPlayer yields to timers when the target entity is missing (anti-st
   assert.ok(Date.now() - t0 >= 90, `null-target approach must sleep (~100ms), took ${Date.now() - t0}ms`)
 })
 
+test('collectLogs survives a search cap consumed by out-of-reach canopy logs', async () => {
+  // Regression (the intermittent "0 logs next to a planted grove"): findBlocks caps at
+  // count BEFORE any post-filter — floating canopy logs at y=75..80 ate all 80 slots,
+  // the height filter then dropped every candidate and collect reported "no logs".
+  // The height window now lives inside the matching predicate, before the cap.
+  const trunk = { name: 'oak_log', position: new Vec3(2, 71, 0) }
+  const canopy = Array.from({ length: 80 }, (_, i) => ({ name: 'oak_log', position: new Vec3(10 + i, 78, 0) }))
+  // Mineflayer's palette gate feeds the matcher name-only stubs (position null) before
+  // any real block exists — the predicate must survive them without crashing.
+  const paletteStub = { name: 'oak_log', position: null }
+  const carried = []
+  const bot = {
+    username: 'Cap',
+    entity: { position: new Vec3(0, 71, 0) },
+    inventory: { items: () => carried },
+    // Emulate mineflayer: palette gate first, then full blocks, count cap, positions out.
+    findBlocks: ({ matching, count }) => {
+      if (![paletteStub, ...canopy, trunk].some(matching)) return []
+      return [...canopy, trunk].filter(matching).slice(0, count).map(b => b.position)
+    },
+    blockAt: p => ({ name: 'oak_log', position: p.clone() }),
+    collectBlock: {
+      collect: async block => {
+        if (block.position.y !== 71) throw new Error('noPath')
+        carried.push({ name: 'oak_log', count: 1 })
+      },
+      cancelTask: async () => {}
+    },
+    pathfinder: { setGoal: () => {} }
+  }
+  const got = await collectLogs(bot, 1, {})
+  assert.equal(got, 1, 'the trunk log is found despite 80 canopy matches above')
+})
+
 test('collectLogs blacklists an unreachable anchor-favourite and falls through to the next log', async () => {
   // Regression: with a direction anchor, findReachableLog always re-served the same
   // far tree, the collect failed 4x on it and the worker reported "no logs anywhere"

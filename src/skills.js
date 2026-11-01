@@ -89,6 +89,10 @@ export function createBody (username) {
         .filter(b => PROTECTED_BLOCKS.test(b.name))
         .forEach(b => moves.blocksCantBreak.add(b.id))
       bot.pathfinder.setMovements(moves)
+      // collectblock creates its own default Movements and setMovements()s it on EVERY
+      // collect — silently discarding the blocksCantBreak protection above (bots dug
+      // through the team's planks/doors). Handing it ours keeps the policy in force.
+      bot.collectBlock.movements = moves
       bot.pathfinder.thinkTimeout = PATH.think_timeout_ms
       // Unlimited A* on an unreachable goal explores the whole loaded world and exhausts the heap.
       bot.pathfinder.searchRadius = PATH.search_radius
@@ -176,12 +180,21 @@ export function countItems (bot, pattern) {
 
 function findReachableLog (bot, anchor, excluded) {
   const feetY = bot.entity.position.y
+  // The height window must live INSIDE the findBlocks predicate: the raw search caps at
+  // `count` (80) nearest matches first, and floating canopy logs above camp (leftovers of
+  // terrain clearing at y≥feet+4) can consume the whole cap — then the post-filter dropped
+  // every candidate and collect reported "no logs anywhere" next to a planted grove.
+  const maxLogY = feetY + PATH.max_log_height_above_feet
+  const minLogY = Math.floor(feetY)
   const candidates = bot.findBlocks({
-    matching: b => NATURAL_LOG.test(b.name),
+    // Mineflayer first feeds the matcher palette stubs created by Block.fromStateId —
+    // correct name, null position — to decide whether a section is worth scanning, and
+    // only then re-checks real blocks with positions. So: no position → pass the
+    // palette gate; real position → apply the window.
+    matching: b => NATURAL_LOG.test(b.name) && (!b.position || (b.position.y >= minLogY && b.position.y <= maxLogY)),
     maxDistance: PATH.log_search_radius,
     count: 80
-  }).filter(p => p.y <= feetY + PATH.max_log_height_above_feet && p.y >= Math.floor(feetY))
-    .filter(p => !excluded.has(p.floored().toString()))
+  }).filter(p => !excluded.has(p.floored().toString()))
   // Prefer logs near the assigned area so workers spread out; fall back to the nearest one.
   const ranked = anchor
     ? [...candidates].sort((a, b) => a.distanceTo(anchor) - b.distanceTo(anchor))

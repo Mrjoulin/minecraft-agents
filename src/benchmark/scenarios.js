@@ -65,6 +65,19 @@ const boxCommands = ctx => {
   ]
 }
 
+// logs_sealed must offer NO alternative: every log within the 48-block search radius is
+// swept (sliced fills — vanilla caps one command at 32768 blocks), then the sealed box
+// is placed. "Take another resource instead" stops being an option, so the failure
+// detection itself is what gets measured.
+const clearLogSlices = ctx => {
+  const f = ctx.camp.fire
+  const cmds = []
+  for (let y = 60; y <= 78; y += 3) {
+    cmds.push(`fill ${f.x - 48} ${y} ${f.z - 48} ${f.x + 48} ${y + 2} ${f.z + 48} air replace #minecraft:logs`)
+  }
+  return cmds
+}
+
 const platformCommands = ctx => [
   `give ${ctx.username} oak_planks 64`
 ]
@@ -105,21 +118,33 @@ export const SCENARIOS = Object.freeze({
       : { success: false, reason: `collected ${r.got}/8 logs behind the wall` }
   }),
 
-  // 3. Logs sealed inside an unbreakable box: the target is visible but unreachable.
-  //    Success means the body detects the failure and terminates — it must not hang.
+  // 3. Every log in the search radius is swept away except nine sealed inside an
+  //    unbreakable box: the targets are visible but unreachable. Success means the body
+  //    detects the failure and terminates fast — it must not hang or wander for logs.
   logs_sealed: Object.freeze({
     id: 'logs_sealed',
-    title: 'Detect unreachable logs (sealed box) and fail fast',
+    title: 'Detect unreachable logs (only sealed ones remain) and fail fast',
     timeoutMs: BENCH.sealed_timeout_ms ?? 150000,
-    setupCommands: ctx => [...baseSetupCommands(ctx), ...boxCommands(ctx)],
+    setupCommands: ctx => [...baseSetupCommands(ctx), ...clearLogSlices(ctx), ...boxCommands(ctx)],
     run: async (bot, ctx) => {
       const t0 = Date.now()
       const got = await collectLogs(bot, 8, {})
       return { got, detected: got === 0, elapsedMs: Date.now() - t0 }
     },
-    evaluate: (_bot, r) => r.detected
-      ? { success: true, reason: null }
-      : { success: false, reason: `collected ${r.got} logs from a sealed box (should be unreachable)` }
+    evaluate: (bot, r, ctx) => {
+      // The palette gate passes name-only stubs (position null) — let them through the
+      // matcher and filter positions on the results, or whole sections get skipped.
+      const inBox = p => Math.abs(p.x - ctx.box.x) <= 1 && p.y === ctx.box.y && Math.abs(p.z - ctx.box.z) <= 1
+      const boxLogs = (bot.findBlocks({
+        matching: b => /_log$/.test(b.name) && (!b.position || inBox(b.position)),
+        maxDistance: 32,
+        count: 16
+      }) || []).filter(inBox)
+      if (boxLogs.length === 0) return { success: false, reason: 'setup broken: no logs in the sealed box region' }
+      return r.detected
+        ? { success: true, reason: null }
+        : { success: false, reason: `collected ${r.got} logs from a sealed box (should be unreachable)` }
+    }
   }),
 
   // 4. Build a 3x3 plank platform from explicit coordinates.

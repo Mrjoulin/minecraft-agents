@@ -38,9 +38,11 @@ export function setupCommands ({ camp, workers, commander }) {
     'kill @e[type=sheep]',
     'kill @e[type=chicken]',
     'kill @e[type=item]',
-    // Flat 11x11 camp pad so chest and campfire stand on solid ground.
+    // Flat 11x11 camp pad so chest and campfire stand on solid ground. Cleared 12 high:
+    // terrain flattening cuts natural trunks at pad level and leaves their canopies
+    // floating at y+4..+9 — those stray logs used to poison log searches near camp.
     `fill ${c.pad.x - 5} ${c.pad.y - 2} ${c.pad.z - 5} ${c.pad.x + 5} ${c.pad.y - 1} ${c.pad.z + 5} grass_block`,
-    `fill ${c.pad.x - 5} ${c.pad.y} ${c.pad.z - 5} ${c.pad.x + 5} ${c.pad.y + 3} ${c.pad.z + 5} air`,
+    `fill ${c.pad.x - 5} ${c.pad.y} ${c.pad.z - 5} ${c.pad.x + 5} ${c.pad.y + 12} ${c.pad.z + 5} air`,
     ...TREE_SPOTS.flatMap(([dx, dz]) => {
       const x = c.fire.x + dx
       const z = c.fire.z + dz

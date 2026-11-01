@@ -79,16 +79,28 @@ test('scenario setup commands are plausible console commands with the scenario-s
   const wall = SCENARIOS.logs_obstacle.setupCommands(ctx)
   assert.ok(wall.some(c => c === `fill ${ctx.wall.x1} ${ctx.wall.y1} ${ctx.wall.z1} ${ctx.wall.x2} ${ctx.wall.y2} ${ctx.wall.z2} oak_planks`), 'obstacle scenario builds the wall')
   const box = SCENARIOS.logs_sealed.setupCommands(ctx)
+  assert.ok(box.some(c => c.includes('air replace #minecraft:logs')), 'sealed scenario sweeps every other log first')
   assert.ok(box.some(c => c === `fill ${ctx.box.x - 1} ${ctx.box.y} ${ctx.box.z - 1} ${ctx.box.x + 1} ${ctx.box.y} ${ctx.box.z + 1} oak_log`), 'sealed scenario places logs inside the box')
   assert.ok(box.some(c => c.startsWith(`fill ${ctx.box.x - 1} ${ctx.box.y} ${ctx.box.z - 1}`) && c.endsWith(' air')), 'interior is hollowed first')
+  assert.ok(box.indexOf(box.find(c => c.includes('replace #minecraft:logs'))) <
+    box.indexOf(box.find(c => c.endsWith(' oak_log'))), 'the sweep runs before the box is placed')
   const platform = SCENARIOS.build_platform.setupCommands(ctx)
   assert.ok(platform.includes('give Bench oak_planks 64'), 'platform scenario supplies planks')
 })
 
 test('evaluate() accepts real completions and rejects shortfalls', () => {
   const ctx = makeContext('Bench')
-  const nearChest = { entity: { position: new Vec3(ctx.camp.chest.x + 1, ctx.camp.chest.y, ctx.camp.chest.z) } }
-  const farAway = { entity: { position: new Vec3(ctx.camp.chest.x + 30, ctx.camp.chest.y, ctx.camp.chest.z) } }
+  const boxLog = { name: 'oak_log', position: { x: ctx.box.x, y: ctx.box.y, z: ctx.box.z } }
+  const atBox = () => [boxLog.position]
+  const nearChest = {
+    entity: { position: new Vec3(ctx.camp.chest.x + 1, ctx.camp.chest.y, ctx.camp.chest.z) },
+    findBlocks: atBox
+  }
+  const farAway = {
+    entity: { position: new Vec3(ctx.camp.chest.x + 30, ctx.camp.chest.y, ctx.camp.chest.z) },
+    findBlocks: atBox
+  }
+  const brokenSetup = { entity: nearChest.entity, findBlocks: () => [] }
   assert.equal(SCENARIOS.logs_return.evaluate(nearChest, { got: 8, returned: true }, ctx).success, true)
   assert.equal(SCENARIOS.logs_return.evaluate(nearChest, { got: 5, returned: true }, ctx).reason, 'collected 5/8 logs')
   assert.equal(SCENARIOS.logs_return.evaluate(farAway, { got: 8, returned: false }, ctx).success, false)
@@ -96,6 +108,7 @@ test('evaluate() accepts real completions and rejects shortfalls', () => {
   assert.equal(SCENARIOS.logs_obstacle.evaluate(nearChest, { got: 2 }, ctx).success, false)
   assert.equal(SCENARIOS.logs_sealed.evaluate(nearChest, { got: 0, detected: true }, ctx).success, true, 'detected unreachable = success')
   assert.equal(SCENARIOS.logs_sealed.evaluate(nearChest, { got: 9, detected: false }, ctx).success, false, 'mining through a sealed box means the setup failed')
+  assert.match(SCENARIOS.logs_sealed.evaluate(brokenSetup, { got: 0, detected: true }, ctx).reason, /setup broken/, 'empty box must not fake a pass')
   assert.equal(SCENARIOS.build_platform.evaluate(nearChest, { placed: 9, remaining: 0 }, ctx).success, true)
   assert.equal(SCENARIOS.build_platform.evaluate(nearChest, { placed: 5, remaining: 4 }, ctx).reason, '4/9 cells missing')
 })
