@@ -10,6 +10,7 @@ import {
 import { resolvePattern, depositShare } from '../items.js'
 import { PLANKS, withdrawFromChest, craftPlanks, buildCells, isBuilt } from '../building.js'
 import { SECTIONS, PLANKS_PER_LOG, hutProgress, describeProgress } from '../blueprint.js'
+import { getObservation, describeObservation } from '../perception.js'
 
 const ACTIONS = Object.freeze(['collect', 'deposit', 'build_section', 'wait_at_camp', 'give', 'follow_commander'])
 const ITEM_KINDS = Object.freeze(['logs', 'planks', 'emerald'])
@@ -110,7 +111,10 @@ export function createWorker ({ persona, bus, camp, blueprint, commanderName = '
     if (busyThinking) { remember(`(event) ${trigger}`); return }
     busyThinking = true
     try {
-      const user = `Time: ${timeLabel()}. You carry ${countItems(bot, LOGS)} logs, ${countItems(bot, PLANKS)} planks and ${countItems(bot, /^emerald$/)} emeralds.
+      // Structured observation first (roadmap Шаг 1): where am I, what is around me.
+      // Carried amounts stay in their own line — the stub parses exactly that phrase.
+      const user = `${describeObservation(getObservation(bot), { withInventory: false })}
+Time: ${timeLabel()}. You carry ${countItems(bot, LOGS)} logs, ${countItems(bot, PLANKS)} planks and ${countItems(bot, /^emerald$/)} emeralds.
 Hut: ${describeProgress(hutProgress(blueprint, p => isBuilt(bot, p)))}.
 Current activity: ${current.type}${current.item ? ` ${current.item}` : ''}${current.n ? ` (${current.n})` : ''}${current.direction !== 'any' ? ` towards ${current.direction}` : ''}${current.section ? ` on the ${current.section}` : ''}.
 Recent memory:\n${memory.map(m => `- ${m}`).join('\n') || '- nothing yet'}

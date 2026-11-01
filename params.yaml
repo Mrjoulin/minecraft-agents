@@ -33,6 +33,16 @@ observer:
   chop_note_every: 3
   place_note_every: 5
 
+perception:
+  observation_radius: 24   # default radius (blocks) for getObservation/scanArea
+  entity_limit: 12         # entities reported per scan
+  scan_limit: 24           # interest blocks reported per scan
+
+benchmark:
+  scenario_timeout_ms: 180000  # hard cap per scenario run
+  sealed_timeout_ms: 150000    # unreachable-target scenario must fail fast well under this
+  settle_command_ms: 150       # pause between setup console commands
+
 world:
   # Seed 42 (fixed in server/server.properties level-seed) — dry rolling forest plain,
   # camp picked by scripts/survey-seed.js: flattest dry 48x48 patch, ground at y≈70.
