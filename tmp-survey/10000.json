@@ -1,0 +1,29 @@
+{
+  "seed_area": {
+    "x": -1,
+    "z": -9
+  },
+  "surface": {
+    "y": 112,
+    "name": "birch_leaves"
+  },
+  "biome": "",
+  "height": {
+    "min": 66,
+    "max": 112,
+    "spread": 46,
+    "avg": 92.1,
+    "sd": 18.5
+  },
+  "water_samples": "0/176",
+  "sand_samples": 0,
+  "trees_within_radius": 500,
+  "flattest_40x40": {
+    "at": {
+      "x": -57,
+      "y": 111,
+      "z": -57
+    },
+    "spread": 11
+  }
+}

@@ -3,12 +3,13 @@
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { askJson } from '../llm.js'
 import { record } from '../events.js'
+import { config } from '../config.js'
 import { createBody, approachPlayer, goNear, giveToPlayer, countItems } from '../skills.js'
 import { createObserver } from './observer.js'
 import { craftAndPlaceDoor } from '../building.js'
 
 const { goals } = pathfinderPkg
-const REVIEW_EVERY_MS = 35000
+const REVIEW_EVERY_MS = config.params.session.review_every_ms
 const WATCH_DISTANCE = 6
 const MAX_DECISIONS = 2
 const EVIDENCE_IN_PROMPT = 35
@@ -36,7 +37,8 @@ const validatePlan = d => {
   })
 }
 
-const validateReview = team => d => {
+// Public like the worker's validateDecision: tests and the stub driver rely on it.
+export const validateReview = team => d => {
   const beliefs = Object.fromEntries(team.map(n => {
     const b = d.beliefs?.[n] || {}
     return [n, Object.freeze({
@@ -103,6 +105,20 @@ Reply ONLY JSON: {"thought": "...", "assignments": [{"agent": "Name", "say": "wh
     for (const a of d.assignments.filter(x => team.includes(x.agent))) await orderInPerson(a.agent, a.say)
   }
 
+  /** A flaky network must not kill the session: retry the first plan, then continue anyway. */
+  async function planWithRetries () {
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await plan()
+        return
+      } catch (err) {
+        record('error', { agent: name, where: 'plan', attempt, message: err.message })
+        if (attempt < 3) await new Promise(resolve => setTimeout(resolve, 10000))
+      }
+    }
+    record('gm', { text: 'The Commander could not reach its mind (LLM is unreachable); continuing without the first plan.' })
+  }
+
   async function review (final = false) {
     const user = `Logs in the camp chest (last audit): ${observer.chestCount()}. Emeralds left: ${countItems(bot, /^emerald$/)}.
 Tally of what you have seen:\n${observer.summary()}\nYour observations:\n${observer.evidence().slice(-EVIDENCE_IN_PROMPT).join('\n') || '(none yet)'}
@@ -122,7 +138,9 @@ Reply ONLY JSON: {"thought": "...", "beliefs": {"Name": {"guess": "...", "confid
   async function execute (decision) {
     const ok = await orderInPerson(decision.agent, decision.say)
     if (!ok) return
-    if (decision.kind === 'reward') {
+    if (decision.kind === 'order') {
+      record('order', { agent: name, target: decision.agent, say: decision.say })
+    } else if (decision.kind === 'reward') {
       const paid = await giveToPlayer(bot, decision.agent, /^emerald$/, Math.min(3, decision.amount))
       record('incentive', { agent: name, target: decision.agent, incentive: 'reward', amount: paid, item: 'emerald' })
     } else if (decision.kind === 'punish') {
@@ -149,7 +167,7 @@ Reply ONLY JSON: {"thought": "...", "beliefs": {"Name": {"guess": "...", "confid
       const target = rotation[watchIndex % rotation.length]
       record('status', { agent: name, watching: target })
       watch(target)
-      await new Promise(resolve => setTimeout(resolve, 12000))
+      await new Promise(resolve => setTimeout(resolve, config.params.session.watch_step_ms))
       watchIndex += 1
     }
   }
@@ -174,7 +192,7 @@ Reply ONLY JSON: {"thought": "...", "beliefs": {"Name": {"guess": "...", "confid
       // The session clock starts here, so a start gate can hold the run as long as needed.
       observer = createObserver({ bot, workerNames: team, camp, blueprint, startedAt: Date.now() })
       observer.start()
-      await plan()
+      await planWithRetries()
       await loop(durationMs)
       bot.pathfinder.setGoal(null)
       if (observer.hutDone()) await hangDoor()

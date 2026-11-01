@@ -1,0 +1,29 @@
+{
+  "seed_area": {
+    "x": -70,
+    "z": -33
+  },
+  "surface": {
+    "y": 69,
+    "name": "grass_block"
+  },
+  "biome": "",
+  "height": {
+    "min": 60,
+    "max": 90,
+    "spread": 30,
+    "avg": 70.6,
+    "sd": 7.02
+  },
+  "water_samples": "31/150",
+  "sand_samples": 0,
+  "trees_within_radius": 500,
+  "flattest_40x40": {
+    "at": {
+      "x": -126,
+      "y": 76,
+      "z": -65
+    },
+    "spread": 20
+  }
+}
