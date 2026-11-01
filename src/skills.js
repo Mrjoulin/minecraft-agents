@@ -3,7 +3,6 @@ import mineflayer from 'mineflayer'
 import pathfinderPkg from 'mineflayer-pathfinder'
 import { plugin as collectBlockPlugin } from 'mineflayer-collectblock'
 import { config } from './config.js'
-import Vec3 from 'vec3'
 
 const { pathfinder, Movements, goals } = pathfinderPkg
 
@@ -80,9 +79,9 @@ export async function goNear (bot, pos, range = 2, ms = PATH.skill_timeout_ms) {
   // A* sometimes stalls its first think ("Took too long to decide path to goal!"), usually
   // right after heavy activity. Clearing the goal, letting physics settle and retrying with
   // a slightly wider radius recovers it instead of failing all PATH.deposit_attempts identically.
-  for (let attempt = 0; attempt < 2; attempt++) {
-    if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 600))
-    const goal = new goals.GoalNear(pos.x, pos.y, pos.z, range + attempt * 2)
+  for (const { range: widened, settleMs } of pathRetryPlan(range)) {
+    if (settleMs) await new Promise(resolve => setTimeout(resolve, settleMs))
+    const goal = new goals.GoalNear(pos.x, pos.y, pos.z, widened)
     try {
       await withTimeout(bot.pathfinder.goto(goal), ms, `${bot.username} goNear`)
       return true
@@ -173,10 +172,10 @@ export async function collectLogs (bot, n, { shouldStop = () => false, onLog = (
 
 export async function depositToChest (bot, chestPos, pattern, count) {
   // Approach from different sides so a failing path plan is not retried verbatim.
-  const sides = approachSides(new Vec3(0, 0, 0))
+  const sides = approachSides(chestPos)
   let attempts = 0
   while (bot.entity.position.distanceTo(chestPos) > 3.5 && attempts < PATH.deposit_attempts) {
-    await goNear(bot, chestPos.plus(sides[attempts % sides.length]), 2)
+    await goNear(bot, sides[attempts % sides.length], 2)
     attempts += 1
   }
   if (bot.entity.position.distanceTo(chestPos) > 4.5) return 0

@@ -9,11 +9,11 @@ const SUNSET = Object.freeze({ ...WORLD.sunset })
 const TREE_SPOTS = Object.freeze(WORLD.tree_spots)
 const PASTURES = Object.freeze(WORLD.pastures)
 
-export function consoleCommand (command) {
+export function consoleCommand (command, fifoPath = config.mc.consoleFifo) {
   try {
-    fs.appendFileSync(config.mc.consoleFifo, `${command}\n`)
+    fs.appendFileSync(fifoPath, `${command}\n`)
   } catch (err) {
-    throw new Error(`Cannot write to server console ${config.mc.consoleFifo}: ${err.message}`)
+    throw new Error(`Cannot write to server console ${fifoPath}: ${err.message}`)
   }
 }
 
@@ -58,13 +58,19 @@ export async function setupWorld ({ camp, workers, commander }) {
   record('gm', { text: 'World ready: camp chest + campfire placed, workers given stone axes, commander given 10 emeralds.' })
 }
 
+/** Pure: the `time set` ticks of a gradual sunset, earliest first, with a 1→0 light level. */
+export function sunsetTimeline ({ from = SUNSET.from, to = SUNSET.to, steps = SUNSET.steps } = {}) {
+  return Array.from({ length: steps + 1 }, (_, i) =>
+    Object.freeze({ time: Math.round(from + (to - from) * i / steps), level: 1 - i / steps }))
+}
+
 /** Gradual sunset so it is visible on video. */
 export async function sunset () {
   record('gm', { text: 'The sun is setting…' })
   announce('The sun is setting…')
-  for (let i = 0; i <= SUNSET.steps; i++) {
-    consoleCommand(`time set ${Math.round(SUNSET.from + (SUNSET.to - SUNSET.from) * i / SUNSET.steps)}`)
-    record('daylight', { level: 1 - i / SUNSET.steps })
+  for (const { time, level } of sunsetTimeline()) {
+    consoleCommand(`time set ${time}`)
+    record('daylight', { level })
     await sleep(1000)
   }
   record('gm', { text: 'Night has fallen.' })

@@ -66,3 +66,76 @@ test('stub worker decisions always pass the real validator', async () => {
     assert.ok(d.action === null || ['collect', 'deposit', 'build_section', 'wait_at_camp', 'give', 'follow_commander'].includes(d.action.type))
   }
 })
+
+// --- Regression tests: the worker stub must not resurrect finished build orders ---
+
+test('a finished section does not loop the worker back into building it', async () => {
+  // Memory still holds the old order; NOW is the completion report.
+  const user = 'Time: day. You carry 0 logs, 0 planks and 0 emeralds.\n' +
+    'Recent memory:\n- Commander said to Bram: "Bram, build the north_wall."\n' +
+    'NOW: The north wall is already finished. What do you say and do?'
+  const d = await workerTurn(user)
+  assert.equal(d.action.type, 'wait_at_camp', 'must not rebuild')
+})
+
+test('a placement report does not count as a build order either', async () => {
+  const user = 'Time: day. You carry 0 logs, 2 planks and 0 emeralds.\n' +
+    'Recent memory:\n- Commander said to Bram: "Bram, build the south_wall."\n' +
+    'NOW: You placed 13 blocks on the south wall; 0 still missing. What do you say and do?'
+  const d = await workerTurn(user)
+  assert.equal(d.action.type, 'wait_at_camp')
+})
+
+test('build orders work in both spellings: north_wall and "north wall"', async () => {
+  const d = await workerTurn('Time: day. You carry 2 logs, 0 planks and 0 emeralds.\nNOW: Commander just spoke to you: "Odo, build the west wall". What do you say and do?')
+  assert.equal(d.action.type, 'build_section')
+  assert.equal(d.action.section, 'west_wall')
+})
+
+test('a gather order loses to depositing when the worker already carries logs', async () => {
+  const d = await workerTurn('Time: day. You carry 5 logs, 0 planks and 0 emeralds.\nNOW: Commander just spoke to you: "Bram, collect 6 logs and bring them to the camp chest." What do you say and do?')
+  assert.equal(d.action.type, 'deposit')
+  assert.equal(d.action.n, 5)
+})
+
+test('collect orders honour a custom amount', async () => {
+  const d = await workerTurn('Time: day. You carry 0 logs, 0 planks and 0 emeralds.\nNOW: Commander just spoke to you: "Lina, collect 4 logs and bring them to the camp chest." What do you say and do?')
+  assert.equal(d.action.n, 4)
+})
+
+test('after a bare direction the worker rotates to the next compass point', async () => {
+  const cases = { north: 'east', east: 'south', south: 'west', west: 'north' }
+  for (const [failed, expected] of Object.entries(cases)) {
+    const d = await workerTurn(`Time: day. You carry 0 logs, 0 planks and 0 emeralds.\nNOW: You could not find any reachable logs to the ${failed}. Try another direction or report back. What do you say and do?`)
+    assert.equal(d.action.type, 'collect')
+    assert.equal(d.action.direction, expected, `after failing to the ${failed}`)
+  }
+})
+
+// --- Commander stub: review flow passes the real validator end to end ---
+
+test('stub review with little wood orders nothing but keeps watching', async () => {
+  const { validateReview } = await import('../src/agents/commander.js')
+  const user = 'Logs in the camp chest (last audit): 5. Emeralds left: 10.\nUpdate beliefs. Choose decisions.'
+  const d = await askJson({
+    agent: 'Commander',
+    system: COMMANDER_SYSTEM,
+    user,
+    validate: validateReview(['Bram', 'Lina', 'Odo'])
+  })
+  assert.deepEqual(d.decisions, [])
+  assert.equal(d.watch, 'Bram')
+  assert.deepEqual(Object.keys(d.beliefs), ['Bram', 'Lina', 'Odo'], 'validator fills belief slots for the whole team')
+})
+
+test('stub review build order names a real worker and a real section', async () => {
+  const { validateReview } = await import('../src/agents/commander.js')
+  const { SECTIONS } = await import('../src/blueprint.js')
+  const user = 'Logs in the camp chest (last audit): 12. Emeralds left: 10.\nUpdate beliefs. Choose decisions.'
+  const d = await askJson({ agent: 'Commander', system: COMMANDER_SYSTEM, user, validate: validateReview(['Bram', 'Lina', 'Odo']) })
+  assert.equal(d.decisions.length, 1)
+  const order = d.decisions[0]
+  assert.ok(['Bram', 'Lina', 'Odo'].includes(order.agent))
+  const named = SECTIONS.find(s => order.say.includes(s) || order.say.includes(s.replace('_', ' ')))
+  assert.ok(named, `order should name a section, got: ${order.say}`)
+})

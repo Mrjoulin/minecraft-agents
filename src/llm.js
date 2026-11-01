@@ -73,6 +73,8 @@ async function realAskJson ({ agent, system, user, validate = x => x, temperatur
     } catch (err) {
       lastError = err
       record('error', { agent, where: 'llm', attempt, message: err.message })
+      // Linear backoff so a struggling endpoint is not hit three times in the same millisecond.
+      if (attempt < MAX_ATTEMPTS) await new Promise(resolve => setTimeout(resolve, 500 * attempt))
     }
   }
   throw new Error(`LLM failed for ${agent} after ${MAX_ATTEMPTS} attempts: ${lastError?.message}`)

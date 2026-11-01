@@ -30,6 +30,7 @@ export function createObserver ({ bot, workerNames, camp, blueprint, startedAt =
   let progress = hutProgress(blueprint, () => false)
   let nearChestSinceAudit = new Set()
   let lastAudit = { at: 0, count: 0 }
+  let auditInProgress = false
   let lastPos = new Map()
   let darkNoted = false
   let timer = null
@@ -89,18 +90,23 @@ export function createObserver ({ bot, workerNames, camp, blueprint, startedAt =
 
   async function maybeAudit () {
     if (!bot.entity || bot.entity.position.distanceTo(camp.chest) > 4) return
-    if (Date.now() - lastAudit.at < AUDIT_EVERY_MS) return
-    const count = await readChest(bot, camp.chest, NATURAL_LOG)
-    const delta = count - lastAudit.count
-    const visitors = [...nearChestSinceAudit]
-    lastAudit = { at: Date.now(), count }
-    nearChestSinceAudit = new Set()
-    if (delta === 0) return
-    const single = visitors.length === 1 ? visitors[0] : null
-    if (single && delta > 0) attributed = new Map(attributed).set(single, attributed.get(single) + delta)
-    note(`Chest audit: ${count} logs in the camp chest (${delta > 0 ? '+' : ''}${delta} since last audit). ` +
-      `Seen at the chest since then: ${visitors.join(', ') || 'nobody I saw'}` +
-      `${single ? ` → those ${delta} logs were delivered by ${single}` : ''}.`)
+    if (auditInProgress || Date.now() - lastAudit.at < AUDIT_EVERY_MS) return
+    auditInProgress = true
+    try {
+      const count = await readChest(bot, camp.chest, NATURAL_LOG)
+      const delta = count - lastAudit.count
+      const visitors = [...nearChestSinceAudit]
+      lastAudit = { at: Date.now(), count }
+      nearChestSinceAudit = new Set()
+        if (delta === 0) return
+      const single = visitors.length === 1 ? visitors[0] : null
+      if (single && delta > 0) attributed = new Map(attributed).set(single, attributed.get(single) + delta)
+      note(`Chest audit: ${count} logs in the camp chest (${delta > 0 ? '+' : ''}${delta} since last audit). ` +
+        `Seen at the chest since then: ${visitors.join(', ') || 'nobody I saw'}` +
+        `${single ? ` → those ${delta} logs were delivered by ${single}` : ''}.`)
+    } finally {
+      auditInProgress = false
+    }
   }
 
   function nearestVisibleWorker (pos) {

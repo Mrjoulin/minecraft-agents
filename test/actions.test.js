@@ -48,3 +48,36 @@ test('depositShare: hoarders skim half (rounded up), others hand in everything',
   assert.equal(depositShare(7, 'diligent'), 7)
   assert.equal(depositShare(0, 'hoarder'), 0)
 })
+
+test('a decision without an action is valid and produces action: null', () => {
+  const d = validateDecision({ thought: 'nothing to do', say: 'hm' })
+  assert.equal(d.action, null)
+  assert.equal(d.thought, 'nothing to do')
+  assert.equal(d.say, 'hm')
+})
+
+test('non-object decisions are rejected', () => {
+  assert.throws(() => validateDecision(null), /not an object/)
+  assert.throws(() => validateDecision('build the wall'), /not an object/)
+  assert.throws(() => validateDecision(42), /not an object/)
+})
+
+test('thought and say are coerced to strings', () => {
+  const d = validateDecision({ thought: 42, say: null, action: { type: 'wait_at_camp' } })
+  assert.equal(d.thought, '42')
+  assert.equal(d.say, '')
+})
+
+test('unknown directions are normalized; unknown sections are rejected for builds', () => {
+  const d = act({ type: 'collect', item: 'logs', n: 3, direction: 'up' })
+  assert.equal(d.action.direction, 'any')
+  assert.throws(() => act({ type: 'build_section', section: 'garage' }), /needs a section/)
+  assert.equal(act({ type: 'wait_at_camp', section: 'garage' }).action.section, null, 'garbage section is dropped where it does not matter')
+})
+
+test('the normalized decision is frozen and give/follow work', () => {
+  const d = act({ type: 'give', item: 'emerald', n: 2 })
+  assert.ok(Object.isFrozen(d) && Object.isFrozen(d.action))
+  assert.equal(d.action.item, 'emerald')
+  assert.equal(act({ type: 'follow_commander' }).action.type, 'follow_commander')
+})

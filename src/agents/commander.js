@@ -37,7 +37,8 @@ const validatePlan = d => {
   })
 }
 
-const validateReview = team => d => {
+// Public like the worker's validateDecision: tests and the stub driver rely on it.
+export const validateReview = team => d => {
   const beliefs = Object.fromEntries(team.map(n => {
     const b = d.beliefs?.[n] || {}
     return [n, Object.freeze({

@@ -246,7 +246,9 @@ What do you say and do?`
       if (!animal) return
       record('trait', { agent: persona.name, trait: persona.trait, note: `distracted by a ${animal.name}` })
       const resume = current
-      deliberate(`You spot a cute ${animal.name} nearby and go over to it.`)
+      // Await the deliberation: a slow LLM reply must not land after the resume below
+      // and overwrite the interrupted activity with whatever it decided mid-distraction.
+      await deliberate(`You spot a cute ${animal.name} nearby and go over to it.`)
       await withTimeout(followEntity(bot, animal, 14000), 17000, 'follow animal').catch(() => {})
       generation += 1
       current = resume
