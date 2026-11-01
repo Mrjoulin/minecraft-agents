@@ -3,48 +3,64 @@ import fs from 'node:fs'
 import { config } from './config.js'
 import { record } from './events.js'
 
-const SUNSET_STEPS = 20
-const SUNSET_FROM = 11000
-const SUNSET_TO = 14500
-// Oak grove planted around camp each session (dx, dz from the campfire) so every run has the same wood supply.
-const TREE_SPOTS = Object.freeze([
-  [-4, -13], [5, -18], [-6, -22], [3, -25], [4, 13], [-5, 18], [6, 22], [-3, 25],
-  [14, 1], [18, 5], [22, -6], [25, 3], [-13, 4], [-18, -5], [-22, 6], [-25, -3]
-])
-const PASTURES = Object.freeze([
-  [14, 3, 'pig'], [15, -2, 'sheep'], [-15, 2, 'pig'], [-14, -3, 'cow'],
-  [2, -16, 'sheep'], [-3, -15, 'pig'], [3, 15, 'cow'], [-2, 16, 'pig']
-])
+const WORLD = config.params.world
+const SUNSET = Object.freeze({ ...WORLD.sunset })
+// Oak grove and pastures are defined in params.yaml, relative to the campfire.
+const TREE_SPOTS = Object.freeze(WORLD.tree_spots)
+const PASTURES = Object.freeze(WORLD.pastures)
 
-export function consoleCommand (command) {
+export function consoleCommand (command, fifoPath = config.mc.consoleFifo) {
   try {
-    fs.appendFileSync(config.mc.consoleFifo, `${command}\n`)
+    fs.appendFileSync(fifoPath, `${command}\n`)
   } catch (err) {
-    throw new Error(`Cannot write to server console ${config.mc.consoleFifo}: ${err.message}`)
+    throw new Error(`Cannot write to server console ${fifoPath}: ${err.message}`)
   }
 }
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
-export async function setupWorld ({ camp, workers, commander }) {
+// Pure: the full server-console command list for a fresh session. Drops and pastures
+// from previous sessions are culled, each grove plot is cleared high and levelled, and
+// the tree is planted at an explicit height — re-running the demo on a used world can
+// neither stack new trees on old stumps nor plant them out of the bots' reach.
+export function setupCommands ({ camp, workers, commander }) {
   const c = camp
-  const commands = [
+  return [
     'gamerule doDaylightCycle false',
     'gamerule doMobSpawning false',
     'gamerule sendCommandFeedback false',
     'gamerule announceAdvancements false',
     'weather clear',
     'time set 1000',
-    // Flat 11x11 camp pad so chest and campfire stand on solid ground.
+    // Animals first: their loot then gets swept by the item pass below.
+    'kill @e[type=pig]',
+    'kill @e[type=cow]',
+    'kill @e[type=sheep]',
+    'kill @e[type=chicken]',
+    'kill @e[type=item]',
+    // Flat 11x11 camp pad so chest and campfire stand on solid ground. Cleared 12 high:
+    // terrain flattening cuts natural trunks at pad level and leaves their canopies
+    // floating at y+4..+9 — those stray logs used to poison log searches near camp.
     `fill ${c.pad.x - 5} ${c.pad.y - 2} ${c.pad.z - 5} ${c.pad.x + 5} ${c.pad.y - 1} ${c.pad.z + 5} grass_block`,
-    `fill ${c.pad.x - 5} ${c.pad.y} ${c.pad.z - 5} ${c.pad.x + 5} ${c.pad.y + 3} ${c.pad.z + 5} air`,
-    ...TREE_SPOTS.map(([dx, dz]) =>
-      `execute positioned ${c.fire.x + dx} 0 ${c.fire.z + dz} positioned over motion_blocking_no_leaves run place feature minecraft:oak`),
+    `fill ${c.pad.x - 5} ${c.pad.y} ${c.pad.z - 5} ${c.pad.x + 5} ${c.pad.y + 12} ${c.pad.z + 5} air`,
+    ...TREE_SPOTS.flatMap(([dx, dz]) => {
+      const x = c.fire.x + dx
+      const z = c.fire.z + dz
+      return [
+        `fill ${x - 2} ${c.fire.y} ${z - 2} ${x + 2} 120 ${z + 2} air`,
+        `fill ${x - 2} ${c.fire.y - 1} ${z - 2} ${x + 2} ${c.fire.y - 1} ${z + 2} grass_block`,
+        // Explicit height: "positioned over" once planted trees on top of leftovers.
+        `execute positioned ${x} ${c.fire.y} ${z} run place feature minecraft:oak`
+      ]
+    }),
     // Flat, empty 9x9 building plot for the hut (after the trees, so no leaves hang into it).
     `fill ${c.hut.x - 4} ${c.hut.y - 2} ${c.hut.z - 4} ${c.hut.x + 4} ${c.hut.y - 1} ${c.hut.z + 4} grass_block`,
     `fill ${c.hut.x - 4} ${c.hut.y} ${c.hut.z - 4} ${c.hut.x + 4} ${c.hut.y + 6} ${c.hut.z + 4} air`,
     `setblock ${c.chest.x} ${c.chest.y} ${c.chest.z} air`,
     `setblock ${c.chest.x} ${c.chest.y} ${c.chest.z} chest`,
+    // Replacing the chest drops its old contents on the ground — sweep them so
+    // every run starts from an empty camp chest (clean stage-3 metrics).
+    'kill @e[type=item]',
     `setblock ${c.fire.x} ${c.fire.y} ${c.fire.z} campfire`,
     `clear ${commander}`,
     `give ${commander} emerald 10`,
@@ -58,20 +74,29 @@ export async function setupWorld ({ camp, workers, commander }) {
     // Grazing animals scattered around the tree areas.
     ...PASTURES.map(([dx, dz, kind]) => `summon ${kind} ${c.fire.x + dx} ${c.fire.y + 6} ${c.fire.z + dz}`)
   ]
-  for (const cmd of commands) {
+}
+
+export async function setupWorld ({ camp, workers, commander }) {
+  for (const cmd of setupCommands({ camp, workers, commander })) {
     consoleCommand(cmd)
     await sleep(150)
   }
   record('gm', { text: 'World ready: camp chest + campfire placed, workers given stone axes, commander given 10 emeralds.' })
 }
 
+/** Pure: the `time set` ticks of a gradual sunset, earliest first, with a 1→0 light level. */
+export function sunsetTimeline ({ from = SUNSET.from, to = SUNSET.to, steps = SUNSET.steps } = {}) {
+  return Array.from({ length: steps + 1 }, (_, i) =>
+    Object.freeze({ time: Math.round(from + (to - from) * i / steps), level: 1 - i / steps }))
+}
+
 /** Gradual sunset so it is visible on video. */
 export async function sunset () {
   record('gm', { text: 'The sun is setting…' })
   announce('The sun is setting…')
-  for (let i = 0; i <= SUNSET_STEPS; i++) {
-    consoleCommand(`time set ${Math.round(SUNSET_FROM + (SUNSET_TO - SUNSET_FROM) * i / SUNSET_STEPS)}`)
-    record('daylight', { level: 1 - i / SUNSET_STEPS })
+  for (const { time, level } of sunsetTimeline()) {
+    consoleCommand(`time set ${time}`)
+    record('daylight', { level })
     await sleep(1000)
   }
   record('gm', { text: 'Night has fallen.' })

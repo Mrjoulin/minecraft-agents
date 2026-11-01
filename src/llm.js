@@ -1,8 +1,31 @@
 // Minimal OpenAI-compatible chat client with JSON-object responses.
+// LLM_STUB=1 swaps the network client for the algorithmic driver (src/stub-llm.js):
+// same prompts, same validators, no API key needed.
 import { config } from './config.js'
 import { record } from './events.js'
 
-const MAX_ATTEMPTS = 3
+const MAX_ATTEMPTS = Number(process.env.LLM_MAX_ATTEMPTS || 5)
+const STUB = process.env.LLM_STUB === '1'
+
+// Exponential backoff between attempts; LLM_RETRY_BASE_MS lets tests keep it instant.
+const backoffMs = attempt => Math.min(8000, Number(process.env.LLM_RETRY_BASE_MS || 500) * 2 ** (attempt - 1))
+
+// Provider-specific request extras, e.g. LLM_EXTRA_BODY={"thinking":{"type":"disabled"}}
+// to keep GLM thinking models from mulling over every bot decision. Invalid JSON warns once.
+let extraBodyWarned = false
+function extraBody () {
+  const raw = process.env.LLM_EXTRA_BODY
+  if (!raw) return {}
+  try {
+    return JSON.parse(raw)
+  } catch {
+    if (!extraBodyWarned) {
+      console.error('[llm] LLM_EXTRA_BODY is not valid JSON, ignoring it:', raw)
+      extraBodyWarned = true
+    }
+    return {}
+  }
+}
 
 /** Extract the first JSON object from a model reply (tolerates code fences / prose). */
 export function parseJsonReply (text) {
@@ -33,7 +56,8 @@ async function postChat (messages, { sessionId, temperature, maxTokens }) {
         messages,
         temperature,
         max_tokens: maxTokens,
-        response_format: { type: 'json_object' }
+        response_format: { type: 'json_object' },
+        ...extraBody()
       })
     })
     const payload = await res.json().catch(() => ({}))
@@ -49,7 +73,12 @@ async function postChat (messages, { sessionId, temperature, maxTokens }) {
 /**
  * Ask the model for a JSON object. `validate` throws if the shape is wrong, triggering a retry.
  */
-export async function askJson ({ agent, system, user, validate = x => x, temperature = 0.7, maxTokens = 1200 }) {
+export async function askJson (opts) {
+  if (STUB) return (await import('./stub-llm.js')).askJson(opts)
+  return realAskJson(opts)
+}
+
+async function realAskJson ({ agent, system, user, validate = x => x, temperature = 0.7, maxTokens = 1200 }) {
   const messages = [
     { role: 'system', content: system },
     { role: 'user', content: user }
@@ -65,6 +94,8 @@ export async function askJson ({ agent, system, user, validate = x => x, tempera
     } catch (err) {
       lastError = err
       record('error', { agent, where: 'llm', attempt, message: err.message })
+      // A struggling endpoint or a flaky network is not hit again in the same instant.
+      if (attempt < MAX_ATTEMPTS) await new Promise(resolve => setTimeout(resolve, backoffMs(attempt)))
     }
   }
   throw new Error(`LLM failed for ${agent} after ${MAX_ATTEMPTS} attempts: ${lastError?.message}`)

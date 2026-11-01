@@ -46,6 +46,11 @@ cp .env.example .env               # put your OpenCode (or any OpenAI-compatible
 Download the official 1.21.4 `server.jar` from Mojang into `server/`, create `server/eula.txt` with
 `eula=true` once you have read and accepted the Minecraft EULA, and use `online-mode=false` with `server-ip=127.0.0.1`.
 
+The world is reproducible: `server/server.properties` pins `level-seed=42`, and the camp coordinates in
+`params.yaml` were placed by `scripts/survey-seed.js` on the flattest dry patch near spawn (ground at y≈70).
+`scripts/reset-world.sh` stops the server and deletes the world so the next start regenerates the exact
+same terrain from the seed.
+
 ```bash
 ./scripts/start-server.sh          # terminal 1
 ```
@@ -91,3 +96,4 @@ src/gm.js               game master (console commands, sunset, reveal, scoring)
 src/dashboard/          spectator UI (SSE)
 scripts/                record, summarize, reset world, start server
 ```
+WINDOWS UPDATE

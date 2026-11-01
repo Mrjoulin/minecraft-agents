@@ -8,11 +8,11 @@ import { hutProgress, describeProgress, SECTIONS } from '../blueprint.js'
 
 const NATURAL_LOG = /_log$/
 const ANIMALS = new Set(['pig', 'cow', 'sheep', 'chicken'])
-const SAMPLE_MS = 1000
-const AUDIT_EVERY_MS = 8000
+const SAMPLE_MS = config.params.observer.sample_ms
+const AUDIT_EVERY_MS = config.params.observer.audit_every_ms
 const MAX_EVIDENCE = 60
-const CHOP_NOTE_EVERY = 3
-const PLACE_NOTE_EVERY = 5
+const CHOP_NOTE_EVERY = config.params.observer.chop_note_every
+const PLACE_NOTE_EVERY = config.params.observer.place_note_every
 
 export function describeActivity ({ nearFire, nearAnimal, nearChest, moving }) {
   if (nearAnimal) return `standing next to a ${nearAnimal}`
@@ -30,6 +30,7 @@ export function createObserver ({ bot, workerNames, camp, blueprint, startedAt =
   let progress = hutProgress(blueprint, () => false)
   let nearChestSinceAudit = new Set()
   let lastAudit = { at: 0, count: 0 }
+  let auditInProgress = false
   let lastPos = new Map()
   let darkNoted = false
   let timer = null
@@ -89,18 +90,23 @@ export function createObserver ({ bot, workerNames, camp, blueprint, startedAt =
 
   async function maybeAudit () {
     if (!bot.entity || bot.entity.position.distanceTo(camp.chest) > 4) return
-    if (Date.now() - lastAudit.at < AUDIT_EVERY_MS) return
-    const count = await readChest(bot, camp.chest, NATURAL_LOG)
-    const delta = count - lastAudit.count
-    const visitors = [...nearChestSinceAudit]
-    lastAudit = { at: Date.now(), count }
-    nearChestSinceAudit = new Set()
-    if (delta === 0) return
-    const single = visitors.length === 1 ? visitors[0] : null
-    if (single && delta > 0) attributed = new Map(attributed).set(single, attributed.get(single) + delta)
-    note(`Chest audit: ${count} logs in the camp chest (${delta > 0 ? '+' : ''}${delta} since last audit). ` +
-      `Seen at the chest since then: ${visitors.join(', ') || 'nobody I saw'}` +
-      `${single ? ` → those ${delta} logs were delivered by ${single}` : ''}.`)
+    if (auditInProgress || Date.now() - lastAudit.at < AUDIT_EVERY_MS) return
+    auditInProgress = true
+    try {
+      const count = await readChest(bot, camp.chest, NATURAL_LOG)
+      const delta = count - lastAudit.count
+      const visitors = [...nearChestSinceAudit]
+      lastAudit = { at: Date.now(), count }
+      nearChestSinceAudit = new Set()
+        if (delta === 0) return
+      const single = visitors.length === 1 ? visitors[0] : null
+      if (single && delta > 0) attributed = new Map(attributed).set(single, attributed.get(single) + delta)
+      note(`Chest audit: ${count} logs in the camp chest (${delta > 0 ? '+' : ''}${delta} since last audit). ` +
+        `Seen at the chest since then: ${visitors.join(', ') || 'nobody I saw'}` +
+        `${single ? ` → those ${delta} logs were delivered by ${single}` : ''}.`)
+    } finally {
+      auditInProgress = false
+    }
   }
 
   function nearestVisibleWorker (pos) {

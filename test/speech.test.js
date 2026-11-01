@@ -30,3 +30,34 @@ test('bus delivers to nearby agents (overhearing) and enforces order range', () 
   assert.equal(bus.canOrder('Commander', 'Bram'), true)
   assert.equal(bus.canOrder('Commander', 'Lina'), false)
 })
+
+test('unregistered or positionless speakers are rejected', () => {
+  const bus = createSpeechBus()
+  assert.throws(() => bus.say('Ghost', 'boo'), /not registered/)
+  bus.register('Mute', { getPos: () => null, onHear: () => {} })
+  assert.throws(() => bus.say('Mute', 'boo'), /no position/)
+})
+
+test('a broken listener does not silence the others', t => {
+  const errors = []
+  t.mock.method(console, 'error', (...args) => errors.push(args.join(' ')))
+  const heard = []
+  const bus = createSpeechBus()
+  bus.register('Cmd', { getPos: () => at(0), onHear: () => {} })
+  bus.register('Broken', { getPos: () => at(1), onHear: () => { throw new Error('my ears!') } })
+  bus.register('Fine', { getPos: () => at(2), onHear: m => heard.push(m.text) })
+  const msg = bus.say('Cmd', 'hello there')
+  assert.deepEqual(heard, ['hello there'])
+  assert.ok(errors[0].includes('Broken'))
+  assert.ok(msg.at > 0 && msg.volume === 'talk')
+})
+
+test('canOrder needs both agents registered with positions', () => {
+  const bus = createSpeechBus()
+  bus.register('A', { getPos: () => at(0), onHear: () => {} })
+  assert.equal(bus.canOrder('A', 'Ghost'), false)
+  bus.register('B', { getPos: () => null, onHear: () => {} })
+  assert.equal(bus.canOrder('A', 'B'), false)
+  bus.register('C', { getPos: () => at(5), onHear: () => {} })
+  assert.equal(bus.canOrder('A', 'C'), true)
+})

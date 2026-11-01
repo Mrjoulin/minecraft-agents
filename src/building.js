@@ -70,7 +70,9 @@ export async function craftPlanks (bot, wanted) {
     if (missing <= 0) break
     const plank = bot.registry.itemsByName[log.name.replace(/_log$/, '_planks')]
     // One craft per log: batch crafts fail with "missing ingredient" when stacks shift mid-craft.
-    for (let i = 0; i < Math.min(log.count, Math.ceil(missing / PLANKS_PER_LOG)); i++) {
+    // Snapshot the count: crafting shrinks the live stack, and a re-read bound would stop early.
+    const crafts = Math.min(log.count, Math.ceil(missing / PLANKS_PER_LOG))
+    for (let i = 0; i < crafts; i++) {
       const recipe = plank && bot.recipesFor(plank.id, null, 1, null)[0]
       if (!recipe) break
       try {
