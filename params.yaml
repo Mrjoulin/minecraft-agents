@@ -49,3 +49,9 @@ world:
   # Grazing animals: dx, dz from the campfire, kind.
   pastures: [[14, 3, pig], [15, -2, sheep], [-15, 2, pig], [-14, -3, cow],
              [2, -16, sheep], [-3, -15, pig], [3, 15, cow], [-2, 16, pig]]
+  # Chunk-column janitor: mineflayer keeps every decoded 1.21 column (~0.1-1 MB each)
+  # for as long as the bot lives; the server's unload packets cover the normal case,
+  # this backstop drops stragglers (teleports, lost packets) per bot.
+  column_janitor:
+    radius_chunks: 12      # keep columns within this Chebyshev distance (server view-distance is 10)
+    every_ms: 30000

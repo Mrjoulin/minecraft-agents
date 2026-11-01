@@ -12,6 +12,7 @@ import { createCommander } from './agents/commander.js'
 import { setupWorld, sunset, revealTruth, mirrorToGameChat, announce } from './gm.js'
 import { manageSpectators, waitForStart } from './startGate.js'
 import { startDashboard } from './dashboard/server.js'
+import { startHeapWatch } from './heap-watch.js'
 
 const GOAL = 'Build a small wooden hut next to camp before night: gather logs into the camp chest, then have the team craft planks and build the walls and roof.'
 const campAt = (x, y, z) => new Vec3(x, y, z)
@@ -46,6 +47,12 @@ async function main () {
   const commander = createCommander({ goal: GOAL, team: DEMO_ROSTER.map(p => p.name), bus, camp: CAMP, blueprint })
   await Promise.all([...workers.map(w => w.ready), commander.ready])
   record('gm', { text: `All bots connected. Log file: ${runInfo.logFile}` })
+  // HEAP_WATCH=1: log memory + per-bot chunk-column counts every 5s; with
+  // HEAP_SNAPSHOT_AT_MB set, also auto-write a heap snapshot when crossed.
+  if (process.env.HEAP_WATCH === '1') {
+    const bots = () => [...workers.map(w => w.bot), commander.bot]
+    startHeapWatch(bots, sample => record('heap', sample))
+  }
 
   await setupWorld({ camp: CAMP, workers: workers.map(w => w.name), commander: 'Commander' })
   await sleep(2500)

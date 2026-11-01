@@ -260,8 +260,15 @@ What do you say and do?`
   async function loop () {
     while (running) {
       try {
+        const startedAt = Date.now()
         if (hookWanted()) await runHook()
         else await runAction(current, generation)
+        // Defense in depth against microtask starvation: an action that resolves
+        // near-instantly (e.g. the followed player is already in range) must not
+        // hand control straight back to the next await — timers and sockets would
+        // never run again and inbound packets pile up into an OOM.
+        const spent = Date.now() - startedAt
+        if (spent < 100) await sleep(TICK_MS - spent)
       } catch (err) {
         record('error', { agent: persona.name, where: 'loop', message: err.message })
         await sleep(TICK_MS)

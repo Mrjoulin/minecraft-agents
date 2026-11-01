@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import Vec3 from 'vec3'
 import {
   withTimeout, directionAnchor, goNear, goToPlayer, approachPlayer,
-  countItems, nearestEntity, isDark, lastPathError, DIRECTIONS
+  countItems, nearestEntity, isDark, lastPathError, DIRECTIONS, collectLogs
 } from '../src/skills.js'
 
 const fakeBot = ({ goto, pos = new Vec3(0, 64, 0) } = {}) => {
@@ -113,6 +113,58 @@ test('approachPlayer resolves when already in range and clears the follow goal',
   assert.equal(await approachPlayer(bot, 'Cmd', 3, 500), true)
   assert.equal(calls.lookAt.length, 1)
   assert.equal(calls.setGoal.at(-1), null, 'follow goal released')
+})
+
+test('approachPlayer yields to timers even on an instant in-range success (anti-starvation)', async () => {
+  // Regression: an instant-true return let the caller's action loop re-enter with
+  // only microtask awaits — the event loop starved, sockets froze and inbound
+  // packets piled up into an OOM (every live GLM run died this way at 55-110s).
+  const { bot } = fakeBot({ pos: new Vec3(1, 64, 0) })
+  bot.players.Cmd = { entity: { position: new Vec3(2, 64, 0) } }
+  const t0 = Date.now()
+  assert.equal(await approachPlayer(bot, 'Cmd', 3, 500), true)
+  assert.ok(Date.now() - t0 >= 90, `in-range approach must sleep (~100ms), took ${Date.now() - t0}ms`)
+})
+
+test('approachPlayer yields to timers when the target entity is missing (anti-starvation)', async () => {
+  // The null path is the nastiest variant: once the target despawns/kicks, an
+  // instant-false loop pins the event loop forever (the server then kicks the
+  // spinning bot too, keeping players maps empty).
+  const { bot } = fakeBot()
+  const t0 = Date.now()
+  assert.equal(await approachPlayer(bot, 'Ghost', 3, 500), false)
+  assert.ok(Date.now() - t0 >= 90, `null-target approach must sleep (~100ms), took ${Date.now() - t0}ms`)
+})
+
+test('collectLogs blacklists an unreachable anchor-favourite and falls through to the next log', async () => {
+  // Regression: with a direction anchor, findReachableLog always re-served the same
+  // far tree, the collect failed 4x on it and the worker reported "no logs anywhere"
+  // while standing next to perfectly good ones.
+  const anchor = new Vec3(40, 64, 0)
+  const far = new Vec3(38, 64, 0)   // anchor-nearest: the doomed favourite
+  const near = new Vec3(1, 64, 0)   // bot-nearest: the one that actually works
+  const carried = []
+  const attempted = []
+  const bot = {
+    username: 'Lumber',
+    entity: { position: new Vec3(0, 64, 0) },
+    inventory: { items: () => carried },
+    findBlocks: () => [far.clone(), near.clone()],
+    blockAt: p => ({ name: 'oak_log', position: p.clone() }),
+    collectBlock: {
+      collect: async block => {
+        attempted.push(block.position.clone())
+        if (block.position.equals(far)) throw new Error('noPath')
+        carried.push({ name: 'oak_log', count: 1 })
+      },
+      cancelTask: async () => {}
+    },
+    pathfinder: { setGoal: () => {} }
+  }
+  const got = await collectLogs(bot, 1, { anchor })
+  assert.equal(got, 1, 'one log gathered via the fallback candidate')
+  assert.equal(attempted.length, 2)
+  assert.deepEqual([attempted[0].x, attempted[1].x], [far.x, near.x], 'anchor favourite tried first, then the fallback')
 })
 
 test('approachPlayer times out when the player never comes near', async () => {
