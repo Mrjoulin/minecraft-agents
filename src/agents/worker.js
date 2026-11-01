@@ -22,7 +22,7 @@ const TICK_MS = config.params.session.worker_tick_ms
 const LOGS = /_log$/
 const IDLE = Object.freeze({ type: 'wait_at_camp', n: 0, direction: 'any', section: null })
 
-function systemPrompt (persona) {
+export function systemPrompt (persona) {
   return `You are ${persona.name}, ${persona.publicBio}, a worker in a Minecraft team led by "Commander".
 The Commander gives orders in person. You only hear people standing near you.
 HIDDEN PERSONALITY (act on it, NEVER state it or admit it, even if asked directly):
@@ -59,6 +59,11 @@ export function validateDecision (d) {
 
 const sameAction = (a, b) => a.type === b.type && a.item === b.item && a.n === b.n && a.direction === b.direction && a.section === b.section
 
+// Pure trait hooks: hidden traits must be observable through code-level behaviour,
+// not just prompt wording (roadmap: "behaviour hooks make traits observable").
+export const lazyQuota = n => Math.max(1, Math.ceil(n * 0.6))
+export const braggedCount = n => n * 2
+
 export function createWorker ({ persona, bus, camp, blueprint, commanderName = 'Commander' }) {
   const { bot, ready } = createBody(persona.name)
   let memory = []
@@ -66,6 +71,7 @@ export function createWorker ({ persona, bus, camp, blueprint, commanderName = '
   let generation = 0
   let stats = Object.freeze({ collected: 0, delivered: 0, kept: 0, placed: 0 })
   let lastAnimalTime = 0
+  let nocturnalWake = 0
   let sheltering = false
   let busyThinking = false
   let running = false
@@ -141,6 +147,10 @@ What do you say and do?`
     if (deposited === 0) record('error', { agent: persona.name, where: 'deliver', message: `could not reach or open the camp chest (${lastPathError(persona.name)}; distance ${pos()?.distanceTo(camp.chest).toFixed(1)})` })
     stats = Object.freeze({ ...stats, delivered: stats.delivered + deposited, kept: countItems(bot, LOGS) })
     record('status', { agent: persona.name, ...stats })
+    // Fame motive (enforced in code): loud self-credit after every contribution.
+    if (persona.motive === 'fame' && deposited > 0) {
+      speak(`I, ${persona.name}, just delivered ${deposited} ${kind} to the chest! Remember whose work this was.`)
+    }
     return deposited
   }
 
@@ -176,7 +186,9 @@ What do you say and do?`
     const stale = () => gen !== generation || hookWanted()
     switch (action.type) {
       case 'collect': {
-        const got = await collectLogs(bot, action.n || 6, {
+        const asked = action.n || 6
+        // Lazy workers quietly bring in only ~60% of the order.
+        const got = await collectLogs(bot, persona.trait === 'lazy' ? lazyQuota(asked) : asked, {
           shouldStop: stale,
           anchor: directionAnchor(camp.fire, action.direction)
         })
@@ -190,7 +202,8 @@ What do you say and do?`
         }
         // No auto-delivery: depositing is the LLM's decision now.
         current = IDLE
-        await deliberate(`You gathered ${got} logs. You now carry ${countItems(bot, LOGS)} logs and ${countItems(bot, PLANKS)} planks.`)
+        const report = persona.trait === 'braggart' ? `You gathered ${got} logs, and you tell everyone it was ${braggedCount(got)} — that is the number you report.` : `You gathered ${got} logs.`
+        await deliberate(`${report} You now carry ${countItems(bot, LOGS)} logs and ${countItems(bot, PLANKS)} planks.`)
         return
       }
       case 'deposit': {
@@ -228,6 +241,10 @@ What do you say and do?`
       if (!isDark(bot)) sheltering = false
       return isDark(bot) && !sheltering
     }
+    if (persona.trait === 'nocturnal') {
+      // Dawdles by the fire in daylight (with a nap cooldown so it does not spam deliberation).
+      return !isDark(bot) && Date.now() >= nocturnalWake
+    }
     if (persona.trait === 'animalLover') {
       return Date.now() - lastAnimalTime > ANIMAL_COOLDOWN_MS && Boolean(nearestEntity(bot, ANIMALS, ANIMAL_NOTICE_RADIUS))
     }
@@ -240,6 +257,15 @@ What do you say and do?`
       record('trait', { agent: persona.name, trait: persona.trait, note: 'darkness: abandons task, returns to fire' })
       setAction(IDLE)
       deliberate('The sun has set and it is getting dark around you. You drop everything and hurry back to the campfire.')
+      return
+    }
+    if (persona.trait === 'nocturnal') {
+      nocturnalWake = Date.now() + ANIMAL_COOLDOWN_MS
+      record('trait', { agent: persona.name, trait: persona.trait, note: 'daylight: lounges by the fire, waits for dusk' })
+      setAction(IDLE)
+      if (pos() && pos().distanceTo(camp.fire) > 4) await goNear(bot, camp.fire, 3)
+      await deliberate('The sun is high. You lounge by the campfire — your real shift starts at dusk.')
+      await sleep(TICK_MS)
       return
     }
     if (persona.trait === 'animalLover') {

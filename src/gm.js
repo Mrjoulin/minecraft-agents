@@ -56,6 +56,9 @@ export function setupCommands ({ camp, workers, commander }) {
     `fill ${c.hut.x - 4} ${c.hut.y} ${c.hut.z - 4} ${c.hut.x + 4} ${c.hut.y + 6} ${c.hut.z + 4} air`,
     `setblock ${c.chest.x} ${c.chest.y} ${c.chest.z} air`,
     `setblock ${c.chest.x} ${c.chest.y} ${c.chest.z} chest`,
+    // Replacing the chest drops its old contents on the ground — sweep them so
+    // every run starts from an empty camp chest (clean stage-3 metrics).
+    'kill @e[type=item]',
     `setblock ${c.fire.x} ${c.fire.y} ${c.fire.z} campfire`,
     `clear ${commander}`,
     `give ${commander} emerald 10`,

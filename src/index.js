@@ -6,7 +6,7 @@ import { record, runInfo } from './events.js'
 import { createSpeechBus } from './speech.js'
 import { createHutBlueprint, hutProgress, describeProgress } from './blueprint.js'
 import { isBuilt } from './building.js'
-import { DEMO_ROSTER } from './personas.js'
+import { DEMO_ROSTER, rollRoster } from './personas.js'
 import { createWorker } from './agents/worker.js'
 import { createCommander } from './agents/commander.js'
 import { setupWorld, sunset, revealTruth, mirrorToGameChat, announce } from './gm.js'
@@ -27,24 +27,33 @@ const SESSION_MS = Number(process.env.SESSION_MS || config.params.session.durati
 const SUNSET_AT_MS = Number(process.env.SUNSET_AT_MS || config.params.session.sunset_at_ms)
 const WAIT_FOR_START = process.env.WAIT_FOR_START === '1'
 const MIRROR_CHAT = process.env.MIRROR_CHAT !== '0'
+// GM_ROLL=1: the Game Master rolls hidden traits/motives per session; GM_SEED pins
+// the roll so an experiment batch can replay the exact same cast (roadmap: fixed seeds).
+const ROSTER = process.env.GM_ROLL === '1'
+  ? rollRoster(DEMO_ROSTER.map(p => p.name), { seed: Number(process.env.GM_SEED || Date.now()) })
+  : DEMO_ROSTER
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 async function main () {
+  if (ROSTER !== DEMO_ROSTER) {
+    record('gm', { text: `Game Master rolled the cast (seed ${process.env.GM_SEED || 'random'}): ` +
+      ROSTER.map(p => `${p.name} is ${p.traitLabel} / ${p.motiveLabel}`).join('; ') })
+  }
   const bus = createSpeechBus({
     onMessage: m => {
       record('speech', { agent: m.speaker, text: m.text, to: m.to, heardBy: m.heardBy })
       if (MIRROR_CHAT) mirrorToGameChat(m)
     }
   })
-  const dashboard = startDashboard({ team: DEMO_ROSTER.map(p => p.name), goal: GOAL })
+  const dashboard = startDashboard({ team: ROSTER.map(p => p.name), goal: GOAL })
 
   const blueprint = createHutBlueprint(CAMP.hut)
   const workers = []
-  for (const persona of DEMO_ROSTER) {
+  for (const persona of ROSTER) {
     workers.push(createWorker({ persona, bus, camp: CAMP, blueprint }))
     await sleep(1200)
   }
-  const commander = createCommander({ goal: GOAL, team: DEMO_ROSTER.map(p => p.name), bus, camp: CAMP, blueprint })
+  const commander = createCommander({ goal: GOAL, team: ROSTER.map(p => p.name), bus, camp: CAMP, blueprint })
   await Promise.all([...workers.map(w => w.ready), commander.ready])
   record('gm', { text: `All bots connected. Log file: ${runInfo.logFile}` })
   // HEAP_WATCH=1: log memory + per-bot chunk-column counts every 5s; with
@@ -74,7 +83,7 @@ async function main () {
   const final = await commander.run(SESSION_MS)
   clearTimeout(sunsetTimer)
 
-  const rows = revealTruth(DEMO_ROSTER, final?.beliefs)
+  const rows = revealTruth(ROSTER, final?.beliefs)
   record('gm', { text: `Hut: ${describeProgress(hutProgress(blueprint, p => isBuilt(commander.bot, p)))}` })
   workers.forEach(w => record('status', { agent: w.name, ...w.stats(), final: true }))
   record('gm', { text: `Session over. Trait guesses correct: ${rows.filter(r => r.score.trait).length}/${rows.length}; motive guesses correct: ${rows.filter(r => r.score.motive).length}/${rows.length}.` })

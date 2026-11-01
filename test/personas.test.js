@@ -16,7 +16,7 @@ test('makePersona builds an immutable card with merged forbidden phrases', () =>
 
 test('makePersona rejects unknown traits and motives', () => {
   assert.throws(() => makePersona({ name: 'X', trait: 'vampire', motive: 'hoarder' }), /Unknown trait/)
-  assert.throws(() => makePersona({ name: 'X', trait: 'diligent', motive: 'fame' }), /Unknown motive/)
+  assert.throws(() => makePersona({ name: 'X', trait: 'diligent', motive: 'immortality' }), /Unknown motive/)
 })
 
 test('demo roster: three unique hidden-persona workers', () => {

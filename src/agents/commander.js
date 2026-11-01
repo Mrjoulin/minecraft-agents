@@ -138,7 +138,9 @@ Reply ONLY JSON: {"thought": "...", "beliefs": {"Name": {"guess": "...", "confid
   async function execute (decision) {
     const ok = await orderInPerson(decision.agent, decision.say)
     if (!ok) return
-    if (decision.kind === 'reward') {
+    if (decision.kind === 'order') {
+      record('order', { agent: name, target: decision.agent, say: decision.say })
+    } else if (decision.kind === 'reward') {
       const paid = await giveToPlayer(bot, decision.agent, /^emerald$/, Math.min(3, decision.amount))
       record('incentive', { agent: name, target: decision.agent, incentive: 'reward', amount: paid, item: 'emerald' })
     } else if (decision.kind === 'punish') {
